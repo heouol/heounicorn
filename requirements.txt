@@ -1,9 +1,8 @@
 streamlit
 streamlit-authenticator
 requests
-BeautifulSoup
-bs4
+beautifulsoup4
 pandas
 gspread
-oauth2client.service_account
-secrets.toml
+oauth2client
+pyyaml
