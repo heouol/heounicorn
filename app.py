@@ -1116,17 +1116,27 @@ def prime_league_page(selected_team):
 def soloq_page():
     st.title("Unicorns of Love Sexy Edition 2025 SoloQ Statistics")
 
-    # Button to go back to Prime League Stats
+    # Кнопка для возврата на страницу Prime League Stats
     if st.button("Back to Prime League Stats"):
         st.session_state.current_page = "Prime League Stats"
         st.rerun()
 
+    # Подключение к Google Sheets
     client = setup_google_sheets()
-    spreadsheet = client.open("Soloq_UOL")
+    if not client:
+        return
 
+    try:
+        spreadsheet = client.open("Soloq_UOL")
+    except gspread.exceptions.APIError as e:
+        st.error(f"Ошибка подключения к Google Sheets: {str(e)}")
+        return
+
+    # Инициализация данных в session_state
     if 'soloq_data' not in st.session_state:
         st.session_state.soloq_data = aggregate_soloq_data(spreadsheet, "Unicorns of Love Sexy Edition")
 
+    # Кнопка обновления данных
     if st.button("Update Soloq"):
         with st.spinner("Updating SoloQ data..."):
             for player, player_data in team_rosters["Unicorns of Love Sexy Edition"].items():
@@ -1136,6 +1146,7 @@ def soloq_page():
             st.session_state.soloq_data = aggregate_soloq_data(spreadsheet, "Unicorns of Love Sexy Edition")
         st.success("SoloQ data updated!")
 
+    # Секция статистики игроков
     st.subheader("SoloQ Player Statistics")
     st.markdown("<hr style='border: 2px solid #333; margin: 10px 0;'>", unsafe_allow_html=True)
     soloq_data = st.session_state.soloq_data
@@ -1179,20 +1190,23 @@ def soloq_page():
             else:
                 st.write(f"No SoloQ data for {player}.")
 
-    # Добавляем секцию для визуализации
+    # Секция визуализации
     st.subheader("SoloQ Games Over Time")
     st.markdown("<hr style='border: 2px solid #333; margin: 10px 0;'>", unsafe_allow_html=True)
 
-    # Выбор игрока для визуализации
+    # Выбор игрока и периода
     selected_player = st.selectbox("Select Player for Visualization", players, key="viz_player")
-
-    # Выбор типа агрегации
     aggregation_type = st.selectbox("Aggregate by", ["Day", "Week", "Month"], key="agg_type")
 
-    # Получаем данные для выбранного игрока
+    # Получение данных для выбранного игрока
     wks = check_if_worksheets_exists(spreadsheet, selected_player)
-    data = wks.get_all_values()
-    if len(data) > 1:
+    try:
+        data = wks.get_all_values()
+        if len(data) <= 1:
+            st.write("No data available for visualization.")
+            return
+
+        # Преобразование данных в DataFrame
         df = pd.DataFrame(data[1:], columns=["Дата матча", "Матч_айди", "Победа", "Чемпион", "Роль", "Киллы", "Смерти", "Ассисты"])
         df["Дата матча"] = pd.to_datetime(df["Дата матча"], errors='coerce')
         df = df.dropna(subset=["Дата матча"])  # Удаляем строки без даты
@@ -1200,27 +1214,33 @@ def soloq_page():
         # Агрегация данных
         if aggregation_type == "Day":
             df_agg = df.groupby(df["Дата матча"].dt.date).size().reset_index(name="Games")
-            x_axis = "Дата матча"
+            df_agg.columns = ["Дата", "Количество игр"]
             title = f"Games Played per Day by {selected_player}"
+            st.bar_chart(df_agg.set_index("Дата")["Количество игр"])
+        
         elif aggregation_type == "Week":
-            df_agg = df.groupby(df["Дата матча"].dt.isocalendar().week).size().reset_index(name="Games")
-            df_agg["Дата матча"] = df_agg["Дата матча"].apply(lambda x: f"Week {x}")
-            x_axis = "Дата матча"
+            df_agg = df.groupby(df["Дата матча"].dt.to_period("W")).size().reset_index(name="Games")
+            df_agg["Дата матча"] = df_agg["Дата матча"].apply(lambda x: x.start_time)  # Начало недели
+            df_agg.columns = ["Дата", "Количество игр"]
             title = f"Games Played per Week by {selected_player}"
+            st.bar_chart(df_agg.set_index("Дата")["Количество игр"])
+        
         elif aggregation_type == "Month":
-            df_agg = df.groupby(df["Дата матча"].dt.to_period("M").astype(str)).size().reset_index(name="Games")
-            df_agg["Дата матча"] = df_agg["Дата матча"].apply(lambda x: x[:7])  # Только год-месяц (YYYY-MM)
-            x_axis = "Дата матча"
+            df_agg = df.groupby(df["Дата матча"].dt.to_period("M")).size().reset_index(name="Games")
+            df_agg["Дата матча"] = df_agg["Дата матча"].apply(lambda x: x.start_time)  # Начало месяца
+            df_agg.columns = ["Дата", "Количество игр"]
             title = f"Games Played per Month by {selected_player}"
+            st.bar_chart(df_agg.set_index("Дата")["Количество игр"])
 
-        # Визуализация
+        # Вывод заголовка
         if not df_agg.empty:
-            st.bar_chart(df_agg.set_index(x_axis)["Games"])
             st.write(f"**{title}**")
         else:
             st.write(f"No data available for visualization for {selected_player}.")
-    else:
-        st.write("No data available for visualization.")
+
+    except gspread.exceptions.APIError as e:
+        st.error(f"Ошибка API Google Sheets при загрузке данных: {str(e)}")
+
 
 # Аутентификация (вставляем здесь)
 with open('config.yaml') as file:
