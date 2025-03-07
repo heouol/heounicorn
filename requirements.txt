@@ -1,0 +1,9 @@
+streamlit
+streamlit_authenticator
+requests
+BeautifulSoup
+bs4
+pandas
+gspread
+oauth2client.service_account
+secrets.toml
