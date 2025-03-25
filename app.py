@@ -126,7 +126,11 @@ def fetch_match_history_data():
             continue
 
         soup = BeautifulSoup(response.content, 'html.parser')
-        match_history_table = soup.select('.wikitable.mhgame.sortable')[0]
+        try:
+            match_history_table = soup.select('.wikitable.mhgame.sortable')[0]
+        except IndexError:
+            st.error(f"Could not find match history table for {tournament_name}")
+            continue
         
         for row in match_history_table.select('tr')[1:]:
             cols = row.select('td')
@@ -149,27 +153,25 @@ def fetch_match_history_data():
             if blue_team == "unknown" or red_team == "unknown":
                 continue
 
-            winner_elems = cols[4].select('.to_hasTooltip') if len(cols) > 4 else []
+            # Определение победителя
             winner_team = "unknown"
-            for elem in winner_elems:
-                title = elem.get('title', '').strip().lower().replace("||tooltip:", "").split("||")[0]
-                if title:
-                    winner_team = normalize_team_name(title)
-                    break
+            result_elem = cols[4].select_one('a[title]') if len(cols) > 4 else None
+            if result_elem and 'title' in result_elem.attrs:
+                winner_team = normalize_team_name(result_elem['title'].strip().lower().replace("||tooltip:", "").split("||")[0])
+            else:
+                # Альтернативный способ: проверка текста результата (например, "1:0" или "0:1")
+                result_text = cols[4].text.strip().lower() if len(cols) > 4 else ""
+                if result_text == "1:0":
+                    winner_team = blue_team
+                elif result_text == "0:1":
+                    winner_team = red_team
 
             if winner_team == "unknown":
                 result_blue = 'Loss'
                 result_red = 'Loss'
             else:
-                if winner_team == blue_team:
-                    result_blue = 'Win'
-                    result_red = 'Loss'
-                elif winner_team == red_team:
-                    result_blue = 'Loss'
-                    result_red = 'Win'
-                else:
-                    result_blue = 'Loss'
-                    result_red = 'Loss'
+                result_blue = 'Win' if winner_team == blue_team else 'Loss'
+                result_red = 'Win' if winner_team == red_team else 'Loss'
 
             # Store match results with game number
             match_key = tuple(sorted([blue_team, red_team]))
@@ -241,7 +243,6 @@ def fetch_match_history_data():
                             team_data[team]['DuoPicks'][duo_key]['wins'] += 1
 
     return dict(team_data)
-
 # Fetch first bans data
 def fetch_first_bans_data():
     team_data = defaultdict(lambda: {
