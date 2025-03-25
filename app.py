@@ -126,7 +126,7 @@ def fetch_match_history_data():
             continue
 
         soup = BeautifulSoup(response.content, 'html.parser')
-        match_history_table = soup.select('.wikitable.sortable')[0]
+        match_history_table = soup.select('.wikitable.hoverable-multirows.mhgame.sortable.plainklinks.column-show-hide-1.jquery-tablesorter')[0]
         
         for row in match_history_table.select('tr')[1:]:
             cols = row.select('td')
