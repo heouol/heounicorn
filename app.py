@@ -383,20 +383,71 @@ def fetch_draft_data():
                 if len(cols) < 24:  # Minimum columns for a complete row
                     continue
 
-                # Extract teams
-                blue_team_img = cols[1].select_one('img')
-                red_team_img = cols[2].select_one('img')
-                blue_team = normalize_team_name(blue_team_img['alt'].replace('logo std', '').strip() if blue_team_img and 'alt' in blue_team_img.attrs else "unknown blue")
-                red_team = normalize_team_name(red_team_img['alt'].replace('logo std', '').strip() if red_team_img and 'alt' in red_team_img.attrs else "unknown red")
+                # Извлечение названий команд
+                blue_team = "unknown blue"
+                red_team = "unknown red"
+
+                # Пробуем извлечь из атрибута title ячейки
+                if len(cols) > 1 and 'title' in cols[1].attrs:
+                    blue_team = cols[1]['title'].strip().lower()
+                if len(cols) > 2 and 'title' in cols[2].attrs:
+                    red_team = cols[2]['title'].strip().lower()
+
+                # Если не нашли title, пробуем .to_hasTooltip
+                if blue_team == "unknown blue":
+                    blue_team_elem = cols[1].select_one('.to_hasTooltip') if len(cols) > 1 else None
+                    if blue_team_elem and 'title' in blue_team_elem.attrs:
+                        blue_team = blue_team_elem['title'].strip().lower().replace("||tooltip:", "").split("||")[0]
+                    elif blue_team_elem:
+                        blue_team = blue_team_elem.text.strip().lower()
+
+                if red_team == "unknown red":
+                    red_team_elem = cols[2].select_one('.to_hasTooltip') if len(cols) > 2 else None
+                    if red_team_elem and 'title' in red_team_elem.attrs:
+                        red_team = red_team_elem['title'].strip().lower().replace("||tooltip:", "").split("||")[0]
+                    elif red_team_elem:
+                        red_team = red_team_elem.text.strip().lower()
+
+                # Если не нашли .to_hasTooltip, пробуем img alt
+                if blue_team == "unknown blue":
+                    blue_team_img = cols[1].select_one('img') if len(cols) > 1 else None
+                    if blue_team_img and 'alt' in blue_team_img.attrs:
+                        blue_team = blue_team_img['alt'].replace('logo std', '').strip().lower()
+
+                if red_team == "unknown red":
+                    red_team_img = cols[2].select_one('img') if len(cols) > 2 else None
+                    if red_team_img and 'alt' in red_team_img.attrs:
+                        red_team = red_team_img['alt'].replace('logo std', '').strip().lower()
+
+                # Если ничего не нашли, пробуем текст ячейки
+                if blue_team == "unknown blue":
+                    blue_team = cols[1].text.strip().lower() if len(cols) > 1 else "unknown blue"
+                if red_team == "unknown red":
+                    red_team = cols[2].text.strip().lower() if len(cols) > 2 else "unknown red"
+
+                # Убедимся, что команда не пустая
+                if not blue_team or blue_team.isspace():
+                    blue_team = "unknown blue"
+                if not red_team or red_team.isspace():
+                    red_team = "unknown red"
+
+                # Нормализация
+                blue_team = normalize_team_name(blue_team)
+                red_team = normalize_team_name(red_team)
+
+                # Отладочный вывод
+                print(f"Normalized blue team: {blue_team}")
+                print(f"Normalized red team: {red_team}")
 
                 if blue_team == "unknown" or red_team == "unknown":
+                    print("Skipping row due to unknown team")
                     continue
 
-                # Determine winner by pbh-winner class
+                # Определение победителя по классу pbh-winner
                 winner_team = red_team if cols[2].get('class') and 'pbh-winner' in cols[2]['class'] else blue_team if cols[1].get('class') and 'pbh-winner' in cols[1]['class'] else None
                 winner_side = 'red' if winner_team == red_team else 'blue' if winner_team == blue_team else None
 
-                # Update win counts
+                # Обновление счётчика побед
                 match_key = tuple(sorted([blue_team, red_team]))
                 match_counter[match_key] += 1
                 match_number = match_counter[match_key]
@@ -405,11 +456,11 @@ def fetch_draft_data():
                 elif winner_side == 'red':
                     team_wins[red_team] += 1
 
-                # Calculate blue_wins and red_wins for the current match
+                # Подсчёт побед для текущего матча
                 blue_wins = team_wins[blue_team]
                 red_wins = team_wins[red_team]
 
-                # Extract bans (BB1, RB1, BB2, RB2, BB3, RB3, RB4, BB4, RB5, BB5)
+                # Извлечение банов (BB1, RB1, BB2, RB2, BB3, RB3, RB4, BB4, RB5, BB5)
                 ban_indices = [5, 6, 7, 8, 9, 10, 15, 16, 17, 18]
                 blue_bans = []
                 red_bans = []
@@ -421,12 +472,12 @@ def fetch_draft_data():
                     else:
                         champ_span_alt = cols[idx].select_one('span.champion-sprite')
                         champ = champ_span_alt.get('title', 'N/A') if champ_span_alt else "N/A"
-                    if i % 2 == 0:  # Even indices are Blue bans
+                    if i % 2 == 0:  # Чётные индексы — баны Blue
                         blue_bans.append(champ)
-                    else:  # Odd indices are Red bans
+                    else:  # Нечётные индексы — баны Red
                         red_bans.append(champ)
 
-                # Extract picks
+                # Извлечение пиков
                 roles = ['Top', 'Jungle', 'Mid', 'ADC', 'Support']
                 blue_picks = []
                 red_picks = []
@@ -477,17 +528,17 @@ def fetch_draft_data():
                     champ = nested_span['title'] if nested_span and 'title' in nested_span.attrs else champ_span.get('data-champion', 'N/A')
                     red_picks.append((champ, roles[4]))
 
-                # Fill missing picks with "N/A"
+                # Заполнение недостающих пиков
                 while len(blue_picks) < 5:
                     blue_picks.append(("N/A", roles[len(blue_picks)]))
                 while len(red_picks) < 5:
                     red_picks.append(("N/A", roles[len(red_picks)]))
 
-                # Extract VOD link
+                # Извлечение ссылки на VOD
                 vod_elem = cols[23].select_one('a')
                 vod_link = vod_elem['href'] if vod_elem and 'href' in vod_elem.attrs else "N/A"
 
-                # Store data for blue team
+                # Сохранение данных для Blue Team
                 draft_blue = {
                     'opponent': red_team,
                     'blue_team': blue_team,
@@ -506,7 +557,7 @@ def fetch_draft_data():
                 }
                 team_drafts[blue_team].append(draft_blue)
 
-                # Store data for red team
+                # Сохранение данных для Red Team
                 draft_red = {
                     'opponent': blue_team,
                     'blue_team': blue_team,
@@ -525,8 +576,18 @@ def fetch_draft_data():
                 }
                 team_drafts[red_team].append(draft_red)
 
-    return dict(team_drafts)
+    # Отладочный вывод
+    for team in team_drafts:
+        print(f"Team: {team}")
+        for draft in team_drafts[team]:
+            print(f"  Draft vs {draft['opponent']}:")
+            print(f"    Blue Bans: {draft['blue_bans']}")
+            print(f"    Red Bans: {draft['red_bans']}")
+            print(f"    Blue Picks: {draft['blue_picks']}")
+            print(f"    Red Picks: {draft['red_picks']}")
+            print(f"    Winner Side: {draft['winner_side']}")
 
+    return dict(team_drafts)
 # Helper functions
 def get_champion(span_tag):
     if span_tag and 'title' in span_tag.attrs:
