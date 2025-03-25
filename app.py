@@ -133,8 +133,8 @@ def fetch_match_history_data():
             if not cols:
                 continue
 
-            blue_team_elem = cols[2].select_one('.to_hasTooltip') if len(cols) > 2 else None
-            red_team_elem = cols[3].select_one('.to_hasTooltip') if len(cols) > 3 else None
+            blue_team_elem = cols[2].select_one('a[title]') if len(cols) > 2 else None
+            red_team_elem = cols[3].select_one('a[title]') if len(cols) > 3 else None
             
             blue_team = (blue_team_elem['title'].strip().lower().replace("||tooltip:", "").split("||")[0] if blue_team_elem and 'title' in blue_team_elem.attrs 
                         else blue_team_elem.text.strip().lower() if blue_team_elem 
