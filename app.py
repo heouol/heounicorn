@@ -292,15 +292,25 @@ def fetch_first_bans_data():
             if blue_team == "unknown" or red_team == "unknown":
                 continue
 
+            # Извлечение первых трёх банов
             ban_columns = ['BB1', 'RB1', 'BB2', 'RB2', 'BB3', 'RB3']
-            for i, ban_col in enumerate(ban_columns[:6]):
-                ban_elem = cols[5 + i].select_one('span.sprite.champion-sprite') if len(cols) > (5 + i) else None
-                champion = get_champion(ban_elem) if ban_elem else "N/A"
+            for i, ban_col in enumerate(ban_columns):
+                col_index = 5 + i  # BB1 начинается с cols[5]
+                ban_elem = cols[col_index].select_one('span.sprite.champion-sprite') if len(cols) > col_index else None
+                champion = get_champion(ban_elem) if ban_elem else None
                 if champion:
                     if ban_col.startswith('BB'):
                         team_data[blue_team]['BlueFirstBans'][champion] += 1
                     elif ban_col.startswith('RB'):
                         team_data[red_team]['RedFirstBans'][champion] += 1
+                else:
+                    print(f"No champion found for {ban_col} in match {blue_team} vs {red_team}")
+
+    # Отладочный вывод
+    for team in team_data:
+        print(f"Team: {team}")
+        print("  BlueFirstBans:", dict(team_data[team]['BlueFirstBans']))
+        print("  RedFirstBans:", dict(team_data[team]['RedFirstBans']))
 
     return dict(team_data)
 
