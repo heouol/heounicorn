@@ -271,25 +271,63 @@ def fetch_first_bans_data():
             if not cols or len(cols) < 11:
                 continue
 
-            blue_team_elem = cols[1].select_one('.to_hasTooltip') if len(cols) > 1 else None
-            red_team_elem = cols[2].select_one('.to_hasTooltip') if len(cols) > 2 else None
-            
-            blue_team_img = cols[1].select_one('img') if len(cols) > 1 else None
-            red_team_img = cols[2].select_one('img') if len(cols) > 2 else None
+            # Извлечение названий команд
+            blue_team = "unknown blue"
+            red_team = "unknown red"
 
-            blue_team = (blue_team_elem['title'].strip().lower().replace("||tooltip:", "").split("||")[0] if blue_team_elem and 'title' in blue_team_elem.attrs 
-                        else blue_team_elem.text.strip().lower() if blue_team_elem 
-                        else (blue_team_img['alt'].strip().lower() if blue_team_img and 'alt' in blue_team_img.attrs else cols[1].text.strip().lower()) 
-                        if len(cols) > 1 else "unknown blue")
-            red_team = (red_team_elem['title'].strip().lower().replace("||tooltip:", "").split("||")[0] if red_team_elem and 'title' in red_team_elem.attrs 
-                       else red_team_elem.text.strip().lower() if red_team_elem 
-                       else (red_team_img['alt'].strip().lower() if red_team_img and 'alt' in red_team_img.attrs else cols[2].text.strip().lower()) 
-                       if len(cols) > 2 else "unknown red")
+            # Пробуем извлечь из атрибута title
+            if len(cols) > 1 and 'title' in cols[1].attrs:
+                blue_team = cols[1]['title'].strip().lower()
+            if len(cols) > 2 and 'title' in cols[2].attrs:
+                red_team = cols[2]['title'].strip().lower()
 
+            # Если не нашли title, пробуем .to_hasTooltip
+            if blue_team == "unknown blue":
+                blue_team_elem = cols[1].select_one('.to_hasTooltip') if len(cols) > 1 else None
+                if blue_team_elem and 'title' in blue_team_elem.attrs:
+                    blue_team = blue_team_elem['title'].strip().lower().replace("||tooltip:", "").split("||")[0]
+                elif blue_team_elem:
+                    blue_team = blue_team_elem.text.strip().lower()
+
+            if red_team == "unknown red":
+                red_team_elem = cols[2].select_one('.to_hasTooltip') if len(cols) > 2 else None
+                if red_team_elem and 'title' in red_team_elem.attrs:
+                    red_team = red_team_elem['title'].strip().lower().replace("||tooltip:", "").split("||")[0]
+                elif red_team_elem:
+                    red_team = red_team_elem.text.strip().lower()
+
+            # Если не нашли .to_hasTooltip, пробуем img alt
+            if blue_team == "unknown blue":
+                blue_team_img = cols[1].select_one('img') if len(cols) > 1 else None
+                if blue_team_img and 'alt' in blue_team_img.attrs:
+                    blue_team = blue_team_img['alt'].strip().lower()
+
+            if red_team == "unknown red":
+                red_team_img = cols[2].select_one('img') if len(cols) > 2 else None
+                if red_team_img and 'alt' in red_team_img.attrs:
+                    red_team = red_team_img['alt'].strip().lower()
+
+            # Если ничего не нашли, пробуем текст ячейки
+            if blue_team == "unknown blue":
+                blue_team = cols[1].text.strip().lower() if len(cols) > 1 else "unknown blue"
+            if red_team == "unknown red":
+                red_team = cols[2].text.strip().lower() if len(cols) > 2 else "unknown red"
+
+            # Убедимся, что команда не пустая
+            if not blue_team or blue_team.isspace():
+                blue_team = "unknown blue"
+            if not red_team or red_team.isspace():
+                red_team = "unknown red"
+
+            # Нормализация
             blue_team = normalize_team_name(blue_team)
             red_team = normalize_team_name(red_team)
 
+            print(f"Normalized blue team: {blue_team}")
+            print(f"Normalized red team: {red_team}")
+
             if blue_team == "unknown" or red_team == "unknown":
+                print("Skipping row due to unknown team")
                 continue
 
             # Извлечение первых трёх банов
