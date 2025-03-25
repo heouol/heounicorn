@@ -298,11 +298,13 @@ def fetch_first_bans_data():
                 col_index = 5 + i  # BB1 начинается с cols[5]
                 ban_elem = cols[col_index].select_one('span.sprite.champion-sprite') if len(cols) > col_index else None
                 champion = get_champion(ban_elem) if ban_elem else None
-                if champion:
+                if champion and champion != "N/A":  # Пропускаем "N/A"
                     if ban_col.startswith('BB'):
                         team_data[blue_team]['BlueFirstBans'][champion] += 1
+                        print(f"Added {champion} to {blue_team} BlueFirstBans")
                     elif ban_col.startswith('RB'):
                         team_data[red_team]['RedFirstBans'][champion] += 1
+                        print(f"Added {champion} to {red_team} RedFirstBans")
                 else:
                     print(f"No champion found for {ban_col} in match {blue_team} vs {red_team}")
 
@@ -313,7 +315,6 @@ def fetch_first_bans_data():
         print("  RedFirstBans:", dict(team_data[team]['RedFirstBans']))
 
     return dict(team_data)
-
 # Fetch draft data
 def fetch_draft_data():
     team_drafts = defaultdict(list)
