@@ -1287,17 +1287,6 @@ def prime_league_page(selected_team):
         st.subheader("Notes")
         st.markdown("<hr style='border: 2px solid #333; margin: 10px 0;'>", unsafe_allow_html=True)
 
-        # Add CSS to highlight ban rows in red
-        st.markdown("""
-            <style>
-            /* Target rows where the Action column has "Ban" */
-            div[data-testid="stDataFrame"] tr:has(td:nth-child(2):where(:text("Ban"))) td:nth-child(1),
-            div[data-testid="stDataFrame"] tr:has(td:nth-child(2):where(:text("Ban"))) td:nth-child(3) {
-                background-color: red;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-
         # Load saved data for the current team
         if f'notes_data_{normalized_selected_team}' not in st.session_state:
             st.session_state[f'notes_data_{normalized_selected_team}'] = load_notes_data(normalized_selected_team)
@@ -1344,55 +1333,6 @@ def prime_league_page(selected_team):
 
         # Save the updated data to the file for the current team
         save_notes_data(st.session_state[f'notes_data_{normalized_selected_team}'], normalized_selected_team)
-    if st.session_state.show_notes:
-        st.subheader("Notes")
-        st.markdown("<hr style='border: 2px solid #333; margin: 10px 0;'>", unsafe_allow_html=True)
-
-        # Load saved data
-        if 'notes_data' not in st.session_state:
-            st.session_state.notes_data = load_notes_data()
-
-        # Display 6 editable tables
-        st.subheader("Draft Templates")
-        table_cols = st.columns(3)  # 3 tables per row
-        for i in range(6):
-            with table_cols[i % 3]:
-                st.write(f"Draft Template {i + 1}")
-                columns = ["Team 1", "Action", "Team 2", "VOD"]
-                df = pd.DataFrame(st.session_state.notes_data["tables"][i], columns=columns)
-
-                # Make the DataFrame editable
-                edited_df = st.data_editor(
-                    df,
-                    num_rows="fixed",
-                    use_container_width=True,
-                    key=f"notes_table_{i}",
-                    column_config={
-                        "Team 1": st.column_config.TextColumn("Team 1"),
-                        "Action": st.column_config.TextColumn("Action", disabled=True),  # Action column is not editable
-                        "Team 2": st.column_config.TextColumn("Team 2"),
-                        "VOD": st.column_config.TextColumn("VOD")
-                    }
-                )
-
-                # Update the data in session state when the table is edited
-                st.session_state.notes_data["tables"][i] = edited_df.values.tolist()
-
-        # Save the updated tables to the file
-        save_notes_data(st.session_state.notes_data)
-
-        # Text area for notes
-        st.subheader("Additional Notes")
-        notes_text = st.text_area(
-            "Write your notes here:",
-            value=st.session_state.notes_data["notes_text"],
-            height=200,
-            key="notes_text_area"
-        )
-
-        # Update the notes text in session state and save to file
-        st.session_state.notes_data["notes_text"] = notes_text
-        save_notes_data(st.session_state.notes_data)
 def soloq_page():
     st.title("Unicorns of Love Sexy Edition 2025 SoloQ Statistics")
 
