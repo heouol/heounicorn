@@ -825,26 +825,28 @@ def main():
     elif st.session_state.current_page == "UOL SoloQ":
         soloq_page()
 
-def save_notes_data(data, filename="notes_data.json"):
-    """Сохраняет данные в JSON-файл."""
+def save_notes_data(data, team_name, filename_prefix="notes_data"):
+    """Сохраняет данные в JSON-файл, уникальный для каждой команды."""
+    filename = f"{filename_prefix}_{team_name}.json"
     with open(filename, "w") as f:
         json.dump(data, f)
 
-def load_notes_data(filename="notes_data.json"):
-    """Загружает данные из JSON-файла. Если файла нет, возвращает начальные данные."""
+def load_notes_data(team_name, filename_prefix="notes_data"):
+    """Загружает данные из JSON-файла для конкретной команды. Если файла нет, возвращает начальные данные."""
+    filename = f"{filename_prefix}_{team_name}.json"
     default_data = {
         "tables": [
             [
-                ["", "Ban", "", ""],
-                ["", "Ban", "", ""],
-                ["", "Ban", "", ""],
-                ["", "Pick", "", ""],
-                ["", "Pick", "", ""],
-                ["", "Pick", "", ""],
-                ["", "Ban", "", ""],
-                ["", "Ban", "", ""],
-                ["", "Pick", "", ""],
-                ["", "Pick", "", ""]
+                ["", "Ban", ""],
+                ["", "Ban", ""],
+                ["", "Ban", ""],
+                ["", "Pick", ""],
+                ["", "Pick", ""],
+                ["", "Pick", ""],
+                ["", "Ban", ""],
+                ["", "Ban", ""],
+                ["", "Pick", ""],
+                ["", "Pick", ""]
             ] for _ in range(6)  # 6 таблиц с пустыми данными
         ],
         "notes_text": ""  # Пустое поле для заметок
@@ -864,7 +866,10 @@ def prime_league_page(selected_team):
         with st.spinner("Updating data..."):
             st.session_state.match_history_data = fetch_match_history_data()
             st.session_state.first_bans_data = fetch_first_bans_data()
-            st.session_state.draft_data = fetch_draft_data()
+            # Обновляем draft_data, чтобы данные были уникальны для каждой команды
+            if 'draft_data' not in st.session_state:
+                st.session_state.draft_data = {}
+            st.session_state.draft_data[normalized_selected_team] = fetch_draft_data()
         st.success("Data updated!")
 
     # Initialize session state for button toggles if not exists
@@ -1170,6 +1175,7 @@ def prime_league_page(selected_team):
     if st.session_state.show_drafts:
         st.subheader("Drafts")
         st.markdown("<hr style='border: 2px solid #333; margin: 10px 0;'>", unsafe_allow_html=True)
+        # Используем данные draft_data для текущей команды
         draft_data = st.session_state.draft_data.get(normalized_selected_team, [])
         if draft_data:
             # Group drafts by match_key (team pair)
@@ -1277,6 +1283,67 @@ def prime_league_page(selected_team):
                             html_draft = styled_df.to_html(escape=False, index=False, classes='styled-table drafts-table')
                             st.markdown(html_draft, unsafe_allow_html=True)
 
+    if st.session_state.show_notes:
+        st.subheader("Notes")
+        st.markdown("<hr style='border: 2px solid #333; margin: 10px 0;'>", unsafe_allow_html=True)
+
+        # Add CSS to highlight ban rows in red
+        st.markdown("""
+            <style>
+            /* Target rows where the Action column has "Ban" */
+            div[data-testid="stDataFrame"] tr:has(td:nth-child(2):where(:text("Ban"))) td:nth-child(1),
+            div[data-testid="stDataFrame"] tr:has(td:nth-child(2):where(:text("Ban"))) td:nth-child(3) {
+                background-color: red;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        # Load saved data for the current team
+        if f'notes_data_{normalized_selected_team}' not in st.session_state:
+            st.session_state[f'notes_data_{normalized_selected_team}'] = load_notes_data(normalized_selected_team)
+
+        # Split the layout into two columns: tables on the left, notes on the right
+        col_left, col_right = st.columns([3, 1])
+
+        with col_left:
+            st.subheader("Draft Templates")
+            table_cols = st.columns(3)  # 3 tables per row
+            for i in range(6):
+                with table_cols[i % 3]:
+                    st.write(f"Draft Template {i + 1}")
+                    columns = ["Team 1", "Action", "Team 2"]
+                    df = pd.DataFrame(st.session_state[f'notes_data_{normalized_selected_team}']["tables"][i], columns=columns)
+
+                    # Make the DataFrame editable
+                    edited_df = st.data_editor(
+                        df,
+                        num_rows="fixed",
+                        use_container_width=True,
+                        key=f"notes_table_{normalized_selected_team}_{i}",
+                        column_config={
+                            "Team 1": st.column_config.TextColumn("Team 1"),
+                            "Action": st.column_config.TextColumn("Action", disabled=True),  # Action column is not editable
+                            "Team 2": st.column_config.TextColumn("Team 2"),
+                        }
+                    )
+
+                    # Update the data in session state when the table is edited
+                    st.session_state[f'notes_data_{normalized_selected_team}']["tables"][i] = edited_df.values.tolist()
+
+        with col_right:
+            st.subheader("Additional Notes")
+            notes_text = st.text_area(
+                "Write your notes here:",
+                value=st.session_state[f'notes_data_{normalized_selected_team}']["notes_text"],
+                height=400,
+                key=f"notes_text_area_{normalized_selected_team}"
+            )
+
+            # Update the notes text in session state
+            st.session_state[f'notes_data_{normalized_selected_team}']["notes_text"] = notes_text
+
+        # Save the updated data to the file for the current team
+        save_notes_data(st.session_state[f'notes_data_{normalized_selected_team}'], normalized_selected_team)
     if st.session_state.show_notes:
         st.subheader("Notes")
         st.markdown("<hr style='border: 2px solid #333; margin: 10px 0;'>", unsafe_allow_html=True)
