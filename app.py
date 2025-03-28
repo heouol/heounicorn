@@ -825,6 +825,35 @@ def main():
     elif st.session_state.current_page == "UOL SoloQ":
         soloq_page()
 
+def save_notes_data(data, filename="notes_data.json"):
+    """Сохраняет данные в JSON-файл."""
+    with open(filename, "w") as f:
+        json.dump(data, f)
+
+def load_notes_data(filename="notes_data.json"):
+    """Загружает данные из JSON-файла. Если файла нет, возвращает начальные данные."""
+    default_data = {
+        "tables": [
+            [
+                ["", "Ban", "", ""],
+                ["", "Ban", "", ""],
+                ["", "Ban", "", ""],
+                ["", "Pick", "", ""],
+                ["", "Pick", "", ""],
+                ["", "Pick", "", ""],
+                ["", "Ban", "", ""],
+                ["", "Ban", "", ""],
+                ["", "Pick", "", ""],
+                ["", "Pick", "", ""]
+            ] for _ in range(6)  # 6 таблиц с пустыми данными
+        ],
+        "notes_text": ""  # Пустое поле для заметок
+    }
+    if os.path.exists(filename):
+        with open(filename, "r") as f:
+            return json.load(f)
+    return default_data
+
 def prime_league_page(selected_team):
     st.title("Prime League 1st Division 2025 Winter - Pick & Ban Statistics")
 
@@ -847,9 +876,11 @@ def prime_league_page(selected_team):
         st.session_state.show_duo_picks = False
     if 'show_drafts' not in st.session_state:
         st.session_state.show_drafts = False
+    if 'show_notes' not in st.session_state:
+        st.session_state.show_notes = False
 
     # Button controls for main sections
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         if st.button("Picks", key="picks_btn"):
             st.session_state.show_picks = not st.session_state.show_picks
@@ -862,6 +893,9 @@ def prime_league_page(selected_team):
     with col4:
         if st.button("Drafts", key="drafts_btn"):
             st.session_state.show_drafts = not st.session_state.show_drafts
+    with col5:
+        if st.button("Notes", key="notes_btn"):
+            st.session_state.show_notes = not st.session_state.show_notes
 
     # Display blocks based on button states
     team_info = st.session_state.match_history_data.get(normalized_selected_team, {})
@@ -898,7 +932,7 @@ def prime_league_page(selected_team):
 
     if st.session_state.show_bans:
         st.subheader("Bans")
-        st.markdown("<hr style='border: 2px solid #EC3B83; margin: 10px 0;'>", unsafe_allow_html=True)
+        st.markdown("<hr style='border: 2px solid #333; margin: 10px 0;'>", unsafe_allow_html=True)
         col1, col2, divider_col, col3, col4 = st.columns([1, 1, 0.1, 1, 1])
 
         with col1:
@@ -1243,6 +1277,55 @@ def prime_league_page(selected_team):
                             html_draft = styled_df.to_html(escape=False, index=False, classes='styled-table drafts-table')
                             st.markdown(html_draft, unsafe_allow_html=True)
 
+    if st.session_state.show_notes:
+        st.subheader("Notes")
+        st.markdown("<hr style='border: 2px solid #333; margin: 10px 0;'>", unsafe_allow_html=True)
+
+        # Load saved data
+        if 'notes_data' not in st.session_state:
+            st.session_state.notes_data = load_notes_data()
+
+        # Display 6 editable tables
+        st.subheader("Draft Templates")
+        table_cols = st.columns(3)  # 3 tables per row
+        for i in range(6):
+            with table_cols[i % 3]:
+                st.write(f"Draft Template {i + 1}")
+                columns = ["Team 1", "Action", "Team 2", "VOD"]
+                df = pd.DataFrame(st.session_state.notes_data["tables"][i], columns=columns)
+
+                # Make the DataFrame editable
+                edited_df = st.data_editor(
+                    df,
+                    num_rows="fixed",
+                    use_container_width=True,
+                    key=f"notes_table_{i}",
+                    column_config={
+                        "Team 1": st.column_config.TextColumn("Team 1"),
+                        "Action": st.column_config.TextColumn("Action", disabled=True),  # Action column is not editable
+                        "Team 2": st.column_config.TextColumn("Team 2"),
+                        "VOD": st.column_config.TextColumn("VOD")
+                    }
+                )
+
+                # Update the data in session state when the table is edited
+                st.session_state.notes_data["tables"][i] = edited_df.values.tolist()
+
+        # Save the updated tables to the file
+        save_notes_data(st.session_state.notes_data)
+
+        # Text area for notes
+        st.subheader("Additional Notes")
+        notes_text = st.text_area(
+            "Write your notes here:",
+            value=st.session_state.notes_data["notes_text"],
+            height=200,
+            key="notes_text_area"
+        )
+
+        # Update the notes text in session state and save to file
+        st.session_state.notes_data["notes_text"] = notes_text
+        save_notes_data(st.session_state.notes_data)
 def soloq_page():
     st.title("Unicorns of Love Sexy Edition 2025 SoloQ Statistics")
 
