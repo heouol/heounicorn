@@ -898,7 +898,7 @@ def prime_league_page(selected_team):
 
     if st.session_state.show_bans:
         st.subheader("Bans")
-        st.markdown("<hr style='border: 2px solid #333; margin: 10px 0;'>", unsafe_allow_html=True)
+        st.markdown("<hr style='border: 2px solid #EC3B83; margin: 10px 0;'>", unsafe_allow_html=True)
         col1, col2, divider_col, col3, col4 = st.columns([1, 1, 0.1, 1, 1])
 
         with col1:
