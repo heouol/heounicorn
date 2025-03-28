@@ -1221,7 +1221,26 @@ def prime_league_page(selected_team):
                             ]
 
                             df_draft = pd.DataFrame(table_data, columns=[left_team, "Action", right_team, "VOD"])
-                            html_draft = df_draft.to_html(escape=False, index=False, classes='styled-table drafts-table')
+
+                            # Define a function to apply styles to the DataFrame
+                            def highlight_cells(row):
+                                styles = [''] * len(row)
+                                # Highlight ban rows (left_team and right_team columns)
+                                if row['Action'] == "Ban":
+                                    styles[0] = 'background-color: red'  # left_team column
+                                    styles[2] = 'background-color: red'  # right_team column
+                                # Highlight the result cell in the VOD column
+                                if row['VOD'] == "Win":
+                                    styles[3] = 'background-color: green'  # VOD column for Win
+                                elif row['VOD'] == "Loss":
+                                    styles[3] = 'background-color: red'  # VOD column for Loss
+                                return styles
+
+                            # Apply the styles to the DataFrame
+                            styled_df = df_draft.style.apply(highlight_cells, axis=1)
+
+                            # Convert to HTML with the styled-table and drafts-table classes
+                            html_draft = styled_df.to_html(escape=False, index=False, classes='styled-table drafts-table')
                             st.markdown(html_draft, unsafe_allow_html=True)
 
 def soloq_page():
