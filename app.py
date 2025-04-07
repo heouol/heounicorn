@@ -24,12 +24,8 @@ MATCH_BASIC_URL = "https://europe.api.riotgames.com/lol/match/v5/matches/{}?api_
 # Список URL для разных этапов турнира
 TOURNAMENT_URLS = {
     "Winter Split": {
-        "match_history": "https://lol.fandom.com/wiki/Prime_League_1st_Division/2025_Season/Winter_Split/Match_History",
-        "picks_and_bans": "https://lol.fandom.com/wiki/Prime_League_1st_Division/2025_Season/Winter_Split/Picks_and_Bans"
-    },
-    "Winter Playoffs": {
-        "match_history": "https://lol.fandom.com/wiki/Prime_League_1st_Division/2025_Season/Winter_Playoffs/Match_History",
-        "picks_and_bans": "https://lol.fandom.com/wiki/Prime_League_1st_Division/2025_Season/Winter_Playoffs/Picks_and_Bans"
+        "match_history": "https://lol.fandom.com/wiki/Prime_League_1st_Division/2025_Season/Spring_Split/Match_History",
+        "picks_and_bans": "https://lol.fandom.com/wiki/Prime_League_1st_Division/2025_Season/Spring_Split/Picks_and_Bans"
     }
 }
 
