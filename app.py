@@ -23,7 +23,7 @@ MATCH_BASIC_URL = "https://europe.api.riotgames.com/lol/match/v5/matches/{}?api_
 
 # Список URL для разных этапов турнира
 TOURNAMENT_URLS = {
-    "Winter Split": {
+    "Spring Split": {
         "match_history": "https://lol.fandom.com/wiki/Prime_League_1st_Division/2025_Season/Spring_Split/Match_History",
         "picks_and_bans": "https://lol.fandom.com/wiki/Prime_League_1st_Division/2025_Season/Spring_Split/Picks_and_Bans"
     }
@@ -853,7 +853,7 @@ def load_notes_data(team_name, filename_prefix="notes_data"):
     return default_data
 
 def prime_league_page(selected_team):
-    st.title("Prime League 1st Division 2025 Winter - Pick & Ban Statistics")
+    st.title("Prime League 1st Division 2025 Spring - Pick & Ban Statistics")
 
     normalized_selected_team = normalize_team_name(selected_team)
 
