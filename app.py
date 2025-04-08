@@ -673,12 +673,41 @@ def main():
             st.session_state.draft_data = fetch_draft_data()
 
     all_teams = set()
+# Check if data exists before accessing keys
+if st.session_state.match_history_data:
     for team in st.session_state.match_history_data.keys():
-        all_teams.add(normalize_team_name(team))
-    for team in st.session_state.first_bans_data.keys():
-        all_teams.add(normalize_team_name(team))
+        # Добавим проверку, что ключ не пустой и нормализация возвращает не 'unknown'
+        normalized_team = normalize_team_name(team)
+        if team and normalized_team != "unknown":
+            all_teams.add(normalized_team)
+# Блок для first_bans_data УДАЛЕН
+if st.session_state.draft_data:
     for team in st.session_state.draft_data.keys():
-        all_teams.add(normalize_team_name(team))
+        # Добавим проверку, что ключ не пустой и нормализация возвращает не 'unknown'
+        normalized_team = normalize_team_name(team)
+        if team and normalized_team != "unknown":
+            all_teams.add(normalized_team)
+
+# Преобразуем в отсортированный список и проверяем, что он не пуст
+teams = sorted(list(all_teams))
+if not teams:
+    st.warning("No valid teams found in the loaded data. Please Update Data.")
+    # Можно либо остановить выполнение, либо показать сообщение
+    # return # Раскомментируйте, если хотите остановить выполнение здесь
+else:
+     # Продолжаем только если список команд не пуст
+     # Выбор команды в sidebar
+     # Добавим проверку, есть ли уже выбранная команда в session_state,
+     # и соответствует ли она текущему списку команд
+     current_selection = st.session_state.get("prime_team_select")
+     if current_selection not in teams:
+         st.session_state.prime_team_select = teams[0] # Выбираем первую команду по умолчанию
+
+     selected_team = st.sidebar.selectbox(
+         "Select a Prime League Team",
+         teams,
+         key="prime_team_select" # Используем ключ для сохранения выбора
+      )
     
     teams = sorted(list(all_teams))
     if not teams:
@@ -808,7 +837,7 @@ def prime_league_page(selected_team):
         if st.button("Update Data"):
             with st.spinner("Updating data... This may take a while."):
                 st.session_state.match_history_data = fetch_match_history_data()
-                st.session_state.first_bans_data = fetch_first_bans_data()
+                
                 st.session_state.draft_data = fetch_draft_data()
             st.success("Data updated!")
             st.rerun() # Перезапускаем для отображения обновленных данных
@@ -820,8 +849,6 @@ def prime_league_page(selected_team):
     if not data_loaded:
          if 'match_history_data' not in st.session_state:
               st.session_state.match_history_data = fetch_match_history_data()
-         if 'first_bans_data' not in st.session_state:
-              st.session_state.first_bans_data = fetch_first_bans_data()
          if 'draft_data' not in st.session_state:
               st.session_state.draft_data = fetch_draft_data()
          st.rerun() # Перезапускаем после загрузки
