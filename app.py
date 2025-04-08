@@ -247,115 +247,7 @@ def fetch_match_history_data():
     print("Finished fetching Match History Data.")
     return dict(team_data)
 # Fetch first bans data
-def fetch_first_bans_data():
-    team_data = defaultdict(lambda: {
-        'BlueFirstBans': defaultdict(int),
-        'RedFirstBans': defaultdict(int)
-    })
 
-    for tournament_name, urls in TOURNAMENT_URLS.items():
-        url = urls["picks_and_bans"]
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers)
-        
-        if response.status_code != 200:
-            st.error(f"Failed to load {tournament_name} Picks and Bans page (code {response.status_code})")
-            continue
-
-        soup = BeautifulSoup(response.content, 'html.parser')
-        picks_bans_tables = soup.select('.wikitable.plainlinks.hoverable-rows.column-show-hide-1')
-        if not picks_bans_tables:
-            st.warning(f"Picks and Bans table not found for {tournament_name}")
-            continue
-
-        picks_bans_table = picks_bans_tables[0]
-        for row in picks_bans_table.select('tr')[1:]:
-            cols = row.select('td')
-            if not cols or len(cols) < 11:
-                continue
-
-            # Извлечение названий команд
-            blue_team = "unknown blue"
-            red_team = "unknown red"
-
-            # Пробуем извлечь из атрибута title
-            if len(cols) > 1 and 'title' in cols[1].attrs:
-                blue_team = cols[1]['title'].strip().lower()
-            if len(cols) > 2 and 'title' in cols[2].attrs:
-                red_team = cols[2]['title'].strip().lower()
-
-            # Если не нашли title, пробуем .to_hasTooltip
-            if blue_team == "unknown blue":
-                blue_team_elem = cols[1].select_one('.to_hasTooltip') if len(cols) > 1 else None
-                if blue_team_elem and 'title' in blue_team_elem.attrs:
-                    blue_team = blue_team_elem['title'].strip().lower().replace("||tooltip:", "").split("||")[0]
-                elif blue_team_elem:
-                    blue_team = blue_team_elem.text.strip().lower()
-
-            if red_team == "unknown red":
-                red_team_elem = cols[2].select_one('.to_hasTooltip') if len(cols) > 2 else None
-                if red_team_elem and 'title' in red_team_elem.attrs:
-                    red_team = red_team_elem['title'].strip().lower().replace("||tooltip:", "").split("||")[0]
-                elif red_team_elem:
-                    red_team = red_team_elem.text.strip().lower()
-
-            # Если не нашли .to_hasTooltip, пробуем img alt
-            if blue_team == "unknown blue":
-                blue_team_img = cols[1].select_one('img') if len(cols) > 1 else None
-                if blue_team_img and 'alt' in blue_team_img.attrs:
-                    blue_team = blue_team_img['alt'].strip().lower()
-
-            if red_team == "unknown red":
-                red_team_img = cols[2].select_one('img') if len(cols) > 2 else None
-                if red_team_img and 'alt' in red_team_img.attrs:
-                    red_team = red_team_img['alt'].strip().lower()
-
-            # Если ничего не нашли, пробуем текст ячейки
-            if blue_team == "unknown blue":
-                blue_team = cols[1].text.strip().lower() if len(cols) > 1 else "unknown blue"
-            if red_team == "unknown red":
-                red_team = cols[2].text.strip().lower() if len(cols) > 2 else "unknown red"
-
-            # Убедимся, что команда не пустая
-            if not blue_team or blue_team.isspace():
-                blue_team = "unknown blue"
-            if not red_team or red_team.isspace():
-                red_team = "unknown red"
-
-            # Нормализация
-            blue_team = normalize_team_name(blue_team)
-            red_team = normalize_team_name(red_team)
-
-            print(f"Normalized blue team: {blue_team}")
-            print(f"Normalized red team: {red_team}")
-
-            if blue_team == "unknown" or red_team == "unknown":
-                print("Skipping row due to unknown team")
-                continue
-
-            # Извлечение первых трёх банов
-            ban_columns = ['BB1', 'RB1', 'BB2', 'RB2', 'BB3', 'RB3']
-            for i, ban_col in enumerate(ban_columns):
-                col_index = 5 + i  # BB1 начинается с cols[5]
-                ban_elem = cols[col_index].select_one('span.sprite.champion-sprite') if len(cols) > col_index else None
-                champion = get_champion(ban_elem) if ban_elem else None
-                if champion and champion != "N/A":  # Пропускаем "N/A"
-                    if ban_col.startswith('BB'):
-                        team_data[blue_team]['BlueFirstBans'][champion] += 1
-                        print(f"Added {champion} to {blue_team} BlueFirstBans")
-                    elif ban_col.startswith('RB'):
-                        team_data[red_team]['RedFirstBans'][champion] += 1
-                        print(f"Added {champion} to {red_team} RedFirstBans")
-                else:
-                    print(f"No champion found for {ban_col} in match {blue_team} vs {red_team}")
-
-    # Отладочный вывод
-    for team in team_data:
-        print(f"Team: {team}")
-        print("  BlueFirstBans:", dict(team_data[team]['BlueFirstBans']))
-        print("  RedFirstBans:", dict(team_data[team]['RedFirstBans']))
-
-    return dict(team_data)
 # Fetch draft data
 def get_champion_from_span(span_tag):
     if span_tag:
@@ -777,7 +669,7 @@ def main():
     if 'match_history_data' not in st.session_state or 'first_bans_data' not in st.session_state or 'draft_data' not in st.session_state:
         with st.spinner("Loading data from Leaguepedia..."):
             st.session_state.match_history_data = fetch_match_history_data()
-            st.session_state.first_bans_data = fetch_first_bans_data()
+            
             st.session_state.draft_data = fetch_draft_data()
 
     all_teams = set()
@@ -993,90 +885,112 @@ def prime_league_page(selected_team):
 
 
     if st.session_state.show_bans:
-        st.subheader("Bans")
-        st.markdown("<hr style='border: 2px solid #333; margin: 10px 0;'>", unsafe_allow_html=True)
-        col1, col2, divider_col, col3, col4 = st.columns([1, 1, 0.1, 1, 1])
+    st.subheader("Bans")
+    st.markdown("<hr style='border: 2px solid #333; margin: 10px 0;'>", unsafe_allow_html=True)
+    col1, col2, divider_col, col3, col4 = st.columns([1, 1, 0.1, 1, 1])
 
-        with col1:
-            st.subheader("First 3 Bans (Blue Side)")
-            blue_bans_data = first_bans_info.get('BlueFirstBans', {})
-            if blue_bans_data:
-                blue_bans_stats = []
-                for champ, count in blue_bans_data.items():
-                    blue_bans_stats.append({
+    # --- Первые 3 бана команды (Данные из st.session_state.draft_data) ---
+    all_draft_data = st.session_state.get('draft_data', {})
+    draft_data_list = all_draft_data.get(normalized_selected_team, [])
+
+    # Собираем статистику по первым 3 банам команды на каждой стороне
+    team_blue_first3_bans = defaultdict(int)
+    team_red_first3_bans = defaultdict(int)
+    if draft_data_list:
+        for draft in draft_data_list:
+            side = draft.get('side')
+            # team_bans должен быть списком из 5 банов ['B1', 'B2', 'B3', 'B4', 'B5']
+            team_bans = draft.get('team_bans', [])
+            if side == 'blue':
+                for ban in team_bans[:3]: # Берем первые три
+                    if ban != "N/A": team_blue_first3_bans[ban] += 1
+            elif side == 'red':
+                for ban in team_bans[:3]: # Берем первые три
+                    if ban != "N/A": team_red_first3_bans[ban] += 1
+
+    with col1:
+        st.subheader("First 3 Bans (as Blue Side)")
+        if team_blue_first3_bans:
+            blue_bans_stats = []
+            # Сортируем по убыванию количества
+            sorted_blue_bans = sorted(team_blue_first3_bans.items(), key=lambda item: item[1], reverse=True)
+            for champ, count in sorted_blue_bans:
+                blue_bans_stats.append({
+                    'Icon': get_champion_icon(champ), 'Champion': champ, 'Count': count
+                })
+            df_blue_bans = pd.DataFrame(blue_bans_stats)
+            html_blue_bans = df_blue_bans.to_html(escape=False, index=False, classes='styled-table small-table')
+            st.markdown(html_blue_bans, unsafe_allow_html=True)
+        else:
+            st.write("No data for first 3 blue side bans.")
+
+    with col2:
+        st.subheader("First 3 Bans (as Red Side)")
+        if team_red_first3_bans:
+            red_bans_stats = []
+             # Сортируем по убыванию количества
+            sorted_red_bans = sorted(team_red_first3_bans.items(), key=lambda item: item[1], reverse=True)
+            for champ, count in sorted_red_bans:
+                red_bans_stats.append({
+                    'Icon': get_champion_icon(champ), 'Champion': champ, 'Count': count
+                })
+            df_red_bans = pd.DataFrame(red_bans_stats)
+            html_red_bans = df_red_bans.to_html(escape=False, index=False, classes='styled-table small-table')
+            st.markdown(html_red_bans, unsafe_allow_html=True)
+        else:
+            st.write("No data for first 3 red side bans.")
+
+    # --- Первые 3 бана оппонента (Данные из st.session_state.match_history_data) ---
+    # Эта часть остается без изменений, так как она использует корректные данные
+    team_info = st.session_state.match_history_data.get(normalized_selected_team, {})
+
+    with divider_col:
+        st.markdown(
+            """<div style='height: 100%; border-left: 2px solid #333; margin: 0 10px;'></div>""",
+            unsafe_allow_html=True
+        )
+
+    with col3:
+        st.subheader("Opponent's First 3 Bans (vs Blue)") # Когда ваша команда была BLUE
+        # Берем баны оппонента (КРАСНОГО), когда вы были синими
+        opponent_red_bans_data = team_info.get('OpponentRedBansFirst3', {})
+        if opponent_red_bans_data:
+            opponent_red_bans_stats = []
+            sorted_opp_red = sorted(opponent_red_bans_data.items(), key=lambda item: item[1], reverse=True)
+            for champ, count in sorted_opp_red:
+                 if champ != "N/A":
+                    opponent_red_bans_stats.append({
                         'Icon': get_champion_icon(champ), 'Champion': champ, 'Count': count
                     })
-                if blue_bans_stats:
-                    df_blue_bans = pd.DataFrame(blue_bans_stats).sort_values('Count', ascending=False)
-                    html_blue_bans = df_blue_bans.to_html(escape=False, index=False, classes='styled-table small-table')
-                    st.markdown(html_blue_bans, unsafe_allow_html=True)
-                else:
-                    st.write("No first 3 blue bans data.")
+            if opponent_red_bans_stats:
+                df_opponent_red_bans = pd.DataFrame(opponent_red_bans_stats)
+                html_opponent_red_bans = df_opponent_red_bans.to_html(escape=False, index=False, classes='styled-table small-table')
+                st.markdown(html_opponent_red_bans, unsafe_allow_html=True)
             else:
-                st.write("No data for first 3 blue bans.")
+                st.write("No opponent first 3 red bans data.")
+        else:
+            st.write("No data structure for opponent's first 3 red bans.") # Изменено сообщение
 
-        with col2:
-            st.subheader("First 3 Bans (Red Side)")
-            red_bans_data = first_bans_info.get('RedFirstBans', {})
-            if red_bans_data:
-                red_bans_stats = []
-                for champ, count in red_bans_data.items():
-                    red_bans_stats.append({
+    with col4:
+        st.subheader("Opponent's First 3 Bans (vs Red)") # Когда ваша команда была RED
+        # Берем баны оппонента (СИНЕГО), когда вы были красными
+        opponent_blue_bans_data = team_info.get('OpponentBlueBansFirst3', {})
+        if opponent_blue_bans_data:
+            opponent_blue_bans_stats = []
+            sorted_opp_blue = sorted(opponent_blue_bans_data.items(), key=lambda item: item[1], reverse=True)
+            for champ, count in sorted_opp_blue:
+                 if champ != "N/A":
+                    opponent_blue_bans_stats.append({
                         'Icon': get_champion_icon(champ), 'Champion': champ, 'Count': count
                     })
-                if red_bans_stats:
-                    df_red_bans = pd.DataFrame(red_bans_stats).sort_values('Count', ascending=False)
-                    html_red_bans = df_red_bans.to_html(escape=False, index=False, classes='styled-table small-table')
-                    st.markdown(html_red_bans, unsafe_allow_html=True)
-                else:
-                    st.write("No first 3 red bans data.")
+            if opponent_blue_bans_stats:
+                df_opponent_blue_bans = pd.DataFrame(opponent_blue_bans_stats)
+                html_opponent_blue_bans = df_opponent_blue_bans.to_html(escape=False, index=False, classes='styled-table small-table')
+                st.markdown(html_opponent_blue_bans, unsafe_allow_html=True)
             else:
-                st.write("No data for first 3 red bans.")
-
-        # ... (Opponent bans columns - оставляем как было) ...
-        with divider_col:
-            st.markdown(
-                """<div style='height: 100%; border-left: 2px solid #333; margin: 0 10px;'></div>""",
-                unsafe_allow_html=True
-            )
-
-        with col3:
-            st.subheader("Opponent's First 3 Bans (Blue Side)")
-            opponent_blue_bans_data = team_info.get('OpponentBlueBans', {})
-            if opponent_blue_bans_data:
-                opponent_blue_bans_stats = []
-                for champ, count in opponent_blue_bans_data.items():
-                     if champ != "N/A":
-                        opponent_blue_bans_stats.append({
-                            'Icon': get_champion_icon(champ), 'Champion': champ, 'Count': count
-                        })
-                if opponent_blue_bans_stats:
-                    df_opponent_blue_bans = pd.DataFrame(opponent_blue_bans_stats).sort_values('Count', ascending=False)
-                    html_opponent_blue_bans = df_opponent_blue_bans.to_html(escape=False, index=False, classes='styled-table small-table')
-                    st.markdown(html_opponent_blue_bans, unsafe_allow_html=True)
-                else:
-                    st.write("No opponent first 3 blue bans data.")
-            else:
-                st.write("No data on opponent's first 3 blue bans.")
-
-        with col4:
-            st.subheader("Opponent's First 3 Bans (Red Side)")
-            opponent_red_bans_data = team_info.get('OpponentRedBans', {})
-            if opponent_red_bans_data:
-                opponent_red_bans_stats = []
-                for champ, count in opponent_red_bans_data.items():
-                     if champ != "N/A":
-                        opponent_red_bans_stats.append({
-                            'Icon': get_champion_icon(champ), 'Champion': champ, 'Count': count
-                        })
-                if opponent_red_bans_stats:
-                    df_opponent_red_bans = pd.DataFrame(opponent_red_bans_stats).sort_values('Count', ascending=False)
-                    html_opponent_red_bans = df_opponent_red_bans.to_html(escape=False, index=False, classes='styled-table small-table')
-                    st.markdown(html_opponent_red_bans, unsafe_allow_html=True)
-                else:
-                     st.write("No opponent first 3 red bans data.")
-            else:
-                st.write("No data on opponent's first 3 red bans.")
+                 st.write("No opponent first 3 blue bans data.")
+        else:
+            st.write("No data structure for opponent's first 3 blue bans.")
 
     if st.session_state.show_duo_picks:
          # --- Блок Duo Picks (оставляем как было) ---
