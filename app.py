@@ -442,35 +442,46 @@ def fetch_draft_data():
 
 
                     # --- Сохранение данных ---
-                    draft_base = {
-                        'winner_side': winner_side,
-                        'blue_wins_series': current_blue_wins,
-                        'red_wins_series': current_red_wins,
-                        'match_key': match_key,
-                        'match_number': match_number,
-                        'vod_link': vod_link,
-                        'tournament': tournament_name,
-                        'absolute_blue_team': blue_team,
-                        'absolute_red_team': red_team
-                    }
-                    # Для Blue Team
-                    draft_blue = draft_base.copy()
-                    draft_blue.update({
-                        'opponent': red_team, 'side': 'blue',
-                        'team_bans': blue_bans, 'opponent_bans': red_bans,
-                        'team_picks_ordered': blue_picks_ordered,
-                        'opponent_picks_ordered': red_picks_ordered,
-                    })
-                    team_drafts[blue_team].append(draft_blue)
-                    # Для Red Team
-                    draft_red = draft_base.copy()
-                    draft_red.update({
-                        'opponent': blue_team, 'side': 'red',
-                        'team_bans': red_bans, 'opponent_bans': blue_bans,
-                        'team_picks_ordered': red_picks_ordered,
-                        'opponent_picks_ordered': blue_picks_ordered,
-                    })
-                    team_drafts[red_team].append(draft_red)
+                    draft_blue = {
+                    'opponent': red_team,
+                    'side': 'blue', # Указываем сторону этой команды
+                    'team_bans': blue_bans, # Баны этой команды
+                    'opponent_bans': red_bans, # Баны оппонента
+                    'team_picks': blue_picks, # Пики этой команды
+                    'opponent_picks': red_picks, # Пики оппонента
+                    'winner_side': winner_side,
+                    'blue_wins': blue_wins, # Оставляем абсолютные для счета серии
+                    'red_wins': red_wins,   # Оставляем абсолютные для счета серии
+                    'match_key': match_key,
+                    'match_number': match_number,
+                    'vod_link': vod_link,
+                    'tournament': tournament_name,
+                    # Добавляем исходные названия команд для справки при отображении
+                    'absolute_blue_team': blue_team,
+                    'absolute_red_team': red_team
+                }
+                team_drafts[blue_team].append(draft_blue)
+
+                # Сохранение данных для Red Team (относительно Red Team)
+                draft_red = {
+                    'opponent': blue_team,
+                    'side': 'red', # Указываем сторону этой команды
+                    'team_bans': red_bans, # Баны этой команды
+                    'opponent_bans': blue_bans, # Баны оппонента
+                    'team_picks': red_picks, # Пики этой команды
+                    'opponent_picks': blue_picks, # Пики оппонента
+                    'winner_side': winner_side,
+                    'blue_wins': blue_wins, # Оставляем абсолютные для счета серии
+                    'red_wins': red_wins,   # Оставляем абсолютные для счета серии
+                    'match_key': match_key,
+                    'match_number': match_number,
+                    'vod_link': vod_link,
+                    'tournament': tournament_name,
+                     # Добавляем исходные названия команд для справки при отображении
+                    'absolute_blue_team': blue_team,
+                    'absolute_red_team': red_team
+                }
+                team_drafts[red_team].append(draft_red)
 
                 except Exception as e:
                     st.error(f"Error processing P/B row {i+1} in table {table_index+1}: {e}")
