@@ -537,38 +537,42 @@ def fetch_draft_data():
                 # Сохранение данных для Blue Team
                 draft_blue = {
                     'opponent': red_team,
-                    'blue_team': blue_team,
-                    'red_team': red_team,
-                    'blue_bans': blue_bans,
-                    'red_bans': red_bans,
-                    'blue_picks': blue_picks,
-                    'red_picks': red_picks,
+                    'side': 'blue', # Указываем сторону этой команды
+                    'team_bans': blue_bans, # Баны этой команды
+                    'opponent_bans': red_bans, # Баны оппонента
+                    'team_picks': blue_picks, # Пики этой команды
+                    'opponent_picks': red_picks, # Пики оппонента
                     'winner_side': winner_side,
-                    'blue_wins': blue_wins,
-                    'red_wins': red_wins,
+                    'blue_wins': blue_wins, # Оставляем абсолютные для счета серии
+                    'red_wins': red_wins,   # Оставляем абсолютные для счета серии
                     'match_key': match_key,
                     'match_number': match_number,
                     'vod_link': vod_link,
-                    'tournament': tournament_name
+                    'tournament': tournament_name,
+                    # Добавляем исходные названия команд для справки при отображении
+                    'absolute_blue_team': blue_team,
+                    'absolute_red_team': red_team
                 }
                 team_drafts[blue_team].append(draft_blue)
 
-                # Сохранение данных для Red Team
+                # Сохранение данных для Red Team (относительно Red Team)
                 draft_red = {
                     'opponent': blue_team,
-                    'blue_team': blue_team,
-                    'red_team': red_team,
-                    'blue_bans': blue_bans,
-                    'red_bans': red_bans,
-                    'blue_picks': blue_picks,
-                    'red_picks': red_picks,
+                    'side': 'red', # Указываем сторону этой команды
+                    'team_bans': red_bans, # Баны этой команды
+                    'opponent_bans': blue_bans, # Баны оппонента
+                    'team_picks': red_picks, # Пики этой команды
+                    'opponent_picks': blue_picks, # Пики оппонента
                     'winner_side': winner_side,
-                    'blue_wins': blue_wins,
-                    'red_wins': red_wins,
+                    'blue_wins': blue_wins, # Оставляем абсолютные для счета серии
+                    'red_wins': red_wins,   # Оставляем абсолютные для счета серии
                     'match_key': match_key,
                     'match_number': match_number,
                     'vod_link': vod_link,
-                    'tournament': tournament_name
+                    'tournament': tournament_name,
+                     # Добавляем исходные названия команд для справки при отображении
+                    'absolute_blue_team': blue_team,
+                    'absolute_red_team': red_team
                 }
                 team_drafts[red_team].append(draft_red)
 
@@ -1213,71 +1217,75 @@ def prime_league_page(selected_team):
                     active_cols = st.columns(len(active_games))
                     for i, draft in enumerate(active_games):
                         with active_cols[i]:
-                            result = "Win" if (draft['winner_side'] == 'blue' and draft['blue_team'] == normalized_selected_team) or (draft['winner_side'] == 'red' and draft['red_team'] == normalized_selected_team) else "Loss"
+                            # Определяем результат для выбранной команды
+                            is_winner = (draft['side'] == draft['winner_side'])
+                            result = "Win" if is_winner else "Loss"
                             st.write(f"Game {draft['match_number']}")
                             st.write(f"Result: {result}")
+                            st.write(f"Side: {draft['side'].capitalize()}") # Показываем сторону команды
 
-                            # Determine the side of the selected team
-                            is_selected_team_blue = (draft['blue_team'] == normalized_selected_team)
-                            team_side = "Blue" if is_selected_team_blue else "Red"
-                            left_team = normalized_selected_team if is_selected_team_blue else draft['blue_team']
-                            right_team = draft['red_team'] if is_selected_team_blue else normalized_selected_team
+                            # Команды для заголовков таблицы
+                            # selected_team слева, opponent справа
+                            left_team_header = normalized_selected_team
+                            right_team_header = draft['opponent']
 
-                            # Swap bans and picks based on the side
-                            if is_selected_team_blue:
-                                left_bans = draft['blue_bans']
-                                right_bans = draft['red_bans']
-                                left_picks = [champ for champ, _ in draft['blue_picks']]
-                                right_picks = [champ for champ, _ in draft['red_picks']]
-                            else:
-                                left_bans = draft['red_bans']
-                                right_bans = draft['blue_bans']
-                                left_picks = [champ for champ, _ in draft['red_picks']]
-                                right_picks = [champ for champ, _ in draft['blue_picks']]
+                            # Используем относительные данные напрямую
+                            team_bans = draft['team_bans']
+                            opponent_bans = draft['opponent_bans']
+                            # Извлекаем только имена чемпионов из кортежей (имя, роль)
+                            team_picks = [champ for champ, _ in draft['team_picks']]
+                            opponent_picks = [champ for champ, _ in draft['opponent_picks']]
 
                             vod_link = draft['vod_link']
                             vod = f'<a href="{vod_link}" target="_blank">VOD</a>' if vod_link != "N/A" else ""
 
-                            # Structure: 3 bans, 3 picks, 2 bans, 2 picks
+                            # Формируем данные для таблицы
+                            # Структура: 3 бана, 3 пика, 2 бана, 2 пика
                             table_data = [
-                                # First 3 bans
-                                (f"{get_champion_icon(left_bans[0])} {left_bans[0]}" if left_bans[0] != "N/A" else "", "Ban", f"{get_champion_icon(right_bans[0])} {right_bans[0]}" if right_bans[0] != "N/A" else "", vod),
-                                (f"{get_champion_icon(left_bans[1])} {left_bans[1]}" if left_bans[1] != "N/A" else "", "Ban", f"{get_champion_icon(right_bans[1])} {right_bans[1]}" if right_bans[1] != "N/A" else "", ""),
-                                (f"{get_champion_icon(left_bans[2])} {left_bans[2]}" if left_bans[2] != "N/A" else "", "Ban", f"{get_champion_icon(right_bans[2])} {right_bans[2]}" if right_bans[2] != "N/A" else "", result),
-                                # First 3 picks
-                                (f"{get_champion_icon(left_picks[0])} {left_picks[0]}" if left_picks[0] != "N/A" else "", "Pick", f"{get_champion_icon(right_picks[0])} {right_picks[0]}" if right_picks[0] != "N/A" else "", ""),
-                                (f"{get_champion_icon(left_picks[1])} {left_picks[1]}" if left_picks[1] != "N/A" else "", "Pick", f"{get_champion_icon(right_picks[1])} {right_picks[1]}" if right_picks[1] != "N/A" else "", ""),
-                                (f"{get_champion_icon(left_picks[2])} {left_picks[2]}" if left_picks[2] != "N/A" else "", "Pick", f"{get_champion_icon(right_picks[2])} {right_picks[2]}" if right_picks[2] != "N/A" else "", ""),
-                                # Last 2 bans
-                                (f"{get_champion_icon(left_bans[3])} {left_bans[3]}" if left_bans[3] != "N/A" else "", "Ban", f"{get_champion_icon(right_bans[3])} {right_bans[3]}" if right_bans[3] != "N/A" else "", ""),
-                                (f"{get_champion_icon(left_bans[4])} {left_bans[4]}" if left_bans[4] != "N/A" else "", "Ban", f"{get_champion_icon(right_bans[4])} {right_bans[4]}" if right_bans[4] != "N/A" else "", ""),
-                                # Last 2 picks
-                                (f"{get_champion_icon(left_picks[3])} {left_picks[3]}" if left_picks[3] != "N/A" else "", "Pick", f"{get_champion_icon(right_picks[3])} {right_picks[3]}" if right_picks[3] != "N/A" else "", ""),
-                                (f"{get_champion_icon(left_picks[4])} {left_picks[4]}" if left_picks[4] != "N/A" else "", "Pick", f"{get_champion_icon(right_picks[4])} {right_picks[4]}" if right_picks[4] != "N/A" else "", ""),
+                                # Первые 3 бана
+                                (f"{get_champion_icon(team_bans[0])} {team_bans[0]}" if len(team_bans) > 0 and team_bans[0] != "N/A" else "", "Ban", f"{get_champion_icon(opponent_bans[0])} {opponent_bans[0]}" if len(opponent_bans) > 0 and opponent_bans[0] != "N/A" else "", vod),
+                                (f"{get_champion_icon(team_bans[1])} {team_bans[1]}" if len(team_bans) > 1 and team_bans[1] != "N/A" else "", "Ban", f"{get_champion_icon(opponent_bans[1])} {opponent_bans[1]}" if len(opponent_bans) > 1 and opponent_bans[1] != "N/A" else "", ""),
+                                (f"{get_champion_icon(team_bans[2])} {team_bans[2]}" if len(team_bans) > 2 and team_bans[2] != "N/A" else "", "Ban", f"{get_champion_icon(opponent_bans[2])} {opponent_bans[2]}" if len(opponent_bans) > 2 and opponent_bans[2] != "N/A" else "", result), # Отображаем результат здесь
+                                # Первые 3 пика
+                                (f"{get_champion_icon(team_picks[0])} {team_picks[0]}" if len(team_picks) > 0 and team_picks[0] != "N/A" else "", "Pick", f"{get_champion_icon(opponent_picks[0])} {opponent_picks[0]}" if len(opponent_picks) > 0 and opponent_picks[0] != "N/A" else "", ""),
+                                (f"{get_champion_icon(team_picks[1])} {team_picks[1]}" if len(team_picks) > 1 and team_picks[1] != "N/A" else "", "Pick", f"{get_champion_icon(opponent_picks[1])} {opponent_picks[1]}" if len(opponent_picks) > 1 and opponent_picks[1] != "N/A" else "", ""),
+                                (f"{get_champion_icon(team_picks[2])} {team_picks[2]}" if len(team_picks) > 2 and team_picks[2] != "N/A" else "", "Pick", f"{get_champion_icon(opponent_picks[2])} {opponent_picks[2]}" if len(opponent_picks) > 2 and opponent_picks[2] != "N/A" else "", ""),
+                                # Последние 2 бана
+                                (f"{get_champion_icon(team_bans[3])} {team_bans[3]}" if len(team_bans) > 3 and team_bans[3] != "N/A" else "", "Ban", f"{get_champion_icon(opponent_bans[3])} {opponent_bans[3]}" if len(opponent_bans) > 3 and opponent_bans[3] != "N/A" else "", ""),
+                                (f"{get_champion_icon(team_bans[4])} {team_bans[4]}" if len(team_bans) > 4 and team_bans[4] != "N/A" else "", "Ban", f"{get_champion_icon(opponent_bans[4])} {opponent_bans[4]}" if len(opponent_bans) > 4 and opponent_bans[4] != "N/A" else "", ""),
+                                # Последние 2 пика
+                                (f"{get_champion_icon(team_picks[3])} {team_picks[3]}" if len(team_picks) > 3 and team_picks[3] != "N/A" else "", "Pick", f"{get_champion_icon(opponent_picks[3])} {opponent_picks[3]}" if len(opponent_picks) > 3 and opponent_picks[3] != "N/A" else "", ""),
+                                (f"{get_champion_icon(team_picks[4])} {team_picks[4]}" if len(team_picks) > 4 and team_picks[4] != "N/A" else "", "Pick", f"{get_champion_icon(opponent_picks[4])} {opponent_picks[4]}" if len(opponent_picks) > 4 and opponent_picks[4] != "N/A" else "", ""),
                             ]
 
-                            df_draft = pd.DataFrame(table_data, columns=[left_team, "Action", right_team, "VOD"])
+                            df_draft = pd.DataFrame(table_data, columns=[left_team_header, "Action", right_team_header, "Info"]) # Переименовал последнюю колонку
 
-                            # Define a function to apply styles to the DataFrame
+                            # Define a function to apply styles (можно оставить как есть или адаптировать)
                             def highlight_cells(row):
                                 styles = [''] * len(row)
-                                # Highlight ban rows (left_team and right_team columns)
+                                # Highlight ban rows (left_team_header и right_team_header колонки)
                                 if row['Action'] == "Ban":
-                                    styles[0] = 'background-color: red'  # left_team column
-                                    styles[2] = 'background-color: red'  # right_team column
-                                # Highlight the result cell in the VOD column
-                                if row['VOD'] == "Win":
-                                    styles[3] = 'background-color: green'  # VOD column for Win
-                                elif row['VOD'] == "Loss":
-                                    styles[3] = 'background-color: red'  # VOD column for Loss
+                                    styles[0] = 'background-color: #440000' # Темно-красный для банов команды слева
+                                    styles[2] = 'background-color: #440000' # Темно-красный для банов команды справа
+                                # Highlight pick rows
+                                elif row['Action'] == "Pick":
+                                    styles[0] = 'background-color: #002b44' # Темно-синий для пиков команды слева
+                                    styles[2] = 'background-color: #002b44' # Темно-синий для пиков команды справа
+
+                                # Highlight the result cell in the Info column
+                                if row['Info'] == "Win":
+                                    styles[3] = 'background-color: green; color: white;' # Info колонка для Win
+                                elif row['Info'] == "Loss":
+                                    styles[3] = 'background-color: red; color: white;' # Info колонка для Loss
                                 return styles
 
-                            # Apply the styles to the DataFrame
+                            # Apply the styles
                             styled_df = df_draft.style.apply(highlight_cells, axis=1)
 
-                            # Convert to HTML with the styled-table and drafts-table classes
+                            # Convert to HTML
                             html_draft = styled_df.to_html(escape=False, index=False, classes='styled-table drafts-table')
                             st.markdown(html_draft, unsafe_allow_html=True)
+
 
     if st.session_state.show_notes:
         st.subheader("Notes")
