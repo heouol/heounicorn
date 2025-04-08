@@ -96,148 +96,155 @@ def normalize_team_name(team_name):
     return team_name_clean
 
 # Fetch match history data
+def get_champion_from_title(span_tag):
+    if span_tag and 'title' in span_tag.attrs:
+        return span_tag['title']
+    return "N/A"
+
+# Helper function to safely get team name from complex cell structure in MH table
+def get_team_name_from_mh_cell(cell):
+    # Try finding 'a' tag with title directly within the cell
+    link = cell.select_one('a[title]')
+    if link and link.get('title'):
+        return link['title']
+    # Try finding img tag and getting title from its parent 'a' tag
+    img = cell.select_one('img')
+    if img:
+        parent_link = img.find_parent('a')
+        if parent_link and parent_link.get('title'):
+            return parent_link['title']
+    # Fallback to cell text if nothing else found
+    cleaned_text = cell.text.strip().replace("⁠", "") # Удаляем невидимые символы
+    return cleaned_text if cleaned_text else "unknown"
+
+
+# Fetch match history data for role-based stats and opponent bans
 def fetch_match_history_data():
+    print("Fetching Match History Data (for Role/Duo Stats & Opponent Bans)...")
     team_data = defaultdict(lambda: {
         'Top': defaultdict(lambda: {'games': 0, 'wins': 0}),
         'Jungle': defaultdict(lambda: {'games': 0, 'wins': 0}),
         'Mid': defaultdict(lambda: {'games': 0, 'wins': 0}),
         'ADC': defaultdict(lambda: {'games': 0, 'wins': 0}),
         'Support': defaultdict(lambda: {'games': 0, 'wins': 0}),
-        'Bans': defaultdict(int),
-        'OpponentBlueBans': defaultdict(int),
-        'OpponentRedBans': defaultdict(int),
+        # 'Bans': defaultdict(int), # Баны самой команды здесь не нужны, берем из draft_data
+        'OpponentBlueBansFirst3': defaultdict(int), # Первые 3 бана оппонента, когда эта команда играла СИНЕЙ
+        'OpponentRedBansFirst3': defaultdict(int),  # Первые 3 бана оппонента, когда эта команда играла КРАСНОЙ
         'DuoPicks': defaultdict(lambda: {'games': 0, 'wins': 0}),
-        'MatchResults': []  # Store match results
+        'MatchResults': []
     })
-
-    match_counter = defaultdict(int)  # Match counter for team pairs
+    roles = ['Top', 'Jungle', 'Mid', 'ADC', 'Support'] # Предполагаемый порядок ролей в MH таблице
 
     for tournament_name, urls in TOURNAMENT_URLS.items():
         url = urls["match_history"]
+        print(f"Fetching MH from: {url}")
         headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers)
-        
-        if response.status_code != 200:
-            st.error(f"Failed to load {tournament_name} Match History page (code {response.status_code})")
+        try:
+            response = requests.get(url, headers=headers, timeout=20)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            st.error(f"MH Fetch Error for {tournament_name}: {e}")
             continue
 
         soup = BeautifulSoup(response.content, 'html.parser')
-        try:
-            match_history_table = soup.select('.wikitable.mhgame.sortable')[0]
-        except IndexError:
-            st.error(f"Could not find match history table for {tournament_name}")
+        match_history_tables = soup.select('.wikitable.mhgame.sortable')
+        if not match_history_tables:
+            st.warning(f"No MH tables found for {tournament_name}")
             continue
-        
-        for row in match_history_table.select('tr')[1:]:
-            cols = row.select('td')
-            if not cols:
-                continue
+        print(f"Found {len(match_history_tables)} MH tables for {tournament_name}.")
 
-            blue_team_elem = cols[2].select_one('a[title]') if len(cols) > 2 else None
-            red_team_elem = cols[3].select_one('a[title]') if len(cols) > 3 else None
-            
-            blue_team = (blue_team_elem['title'].strip().lower().replace("||tooltip:", "").split("||")[0] if blue_team_elem and 'title' in blue_team_elem.attrs 
-                        else blue_team_elem.text.strip().lower() if blue_team_elem 
-                        else cols[2].text.strip().lower() if len(cols) > 2 else "unknown blue")
-            red_team = (red_team_elem['title'].strip().lower().replace("||tooltip:", "").split("||")[0] if red_team_elem and 'title' in red_team_elem.attrs 
-                       else red_team_elem.text.strip().lower() if red_team_elem 
-                       else cols[3].text.strip().lower() if len(cols) > 3 else "unknown red")
+        for table_index, match_history_table in enumerate(match_history_tables):
+            print(f"Processing MH table {table_index + 1}...")
+            rows = match_history_table.select('tr')
+            print(f"Found {len(rows) - 1} MH rows.")
 
-            blue_team = normalize_team_name(blue_team)
-            red_team = normalize_team_name(red_team)
+            for i, row in enumerate(rows[1:]):
+                cols = row.select('td')
+                # Индексы: 0:Date, 1:Patch, 2:Blue, 3:Red, 4:Winner, 5:BBans, 6:RBans, 7:BPicks, 8:RPicks
+                if len(cols) < 9:
+                    print(f"Skipping MH row {i+1}, cols={len(cols)} < 9")
+                    continue
 
-            if blue_team == "unknown" or red_team == "unknown":
-                continue
+                try:
+                    blue_team_raw = get_team_name_from_mh_cell(cols[2])
+                    red_team_raw = get_team_name_from_mh_cell(cols[3])
+                    winner_raw = get_team_name_from_mh_cell(cols[4])
 
-            # Определение победителя
-            winner_team = "unknown"
-            result_elem = cols[4].select_one('a[title]') if len(cols) > 4 else None
-            if result_elem and 'title' in result_elem.attrs:
-                winner_team = normalize_team_name(result_elem['title'].strip().lower().replace("||tooltip:", "").split("||")[0])
-            else:
-                # Альтернативный способ: проверка текста результата (например, "1:0" или "0:1")
-                result_text = cols[4].text.strip().lower() if len(cols) > 4 else ""
-                if result_text == "1:0":
-                    winner_team = blue_team
-                elif result_text == "0:1":
-                    winner_team = red_team
+                    blue_team = normalize_team_name(blue_team_raw)
+                    red_team = normalize_team_name(red_team_raw)
+                    winner_team = normalize_team_name(winner_raw)
 
-            if winner_team == "unknown":
-                result_blue = 'Loss'
-                result_red = 'Loss'
-            else:
-                result_blue = 'Win' if winner_team == blue_team else 'Loss'
-                result_red = 'Win' if winner_team == red_team else 'Loss'
+                    if blue_team == "unknown" or red_team == "unknown":
+                        print(f"Skipping MH row {i+1}: Unknown team (Raw Blue: '{blue_team_raw}', Raw Red: '{red_team_raw}')")
+                        continue
 
-            # Store match results with game number
-            match_key = tuple(sorted([blue_team, red_team]))
-            match_counter[match_key] += 1
-            match_number = match_counter[match_key]
-            team_data[blue_team]['MatchResults'].append({
-                'match_key': match_key,
-                'match_number': match_number,
-                'side': 'blue',
-                'opponent': red_team,
-                'win': result_blue == 'Win',
-                'tournament': tournament_name
-            })
-            team_data[red_team]['MatchResults'].append({
-                'match_key': match_key,
-                'match_number': match_number,
-                'side': 'red',
-                'opponent': blue_team,
-                'win': result_red == 'Win',
-                'tournament': tournament_name
-            })
+                    print(f"MH Row {i+1}: Blue='{blue_team}' Red='{red_team}' Winner='{winner_team}'")
 
-            blue_bans_elem = cols[5].select('span.sprite.champion-sprite') if len(cols) > 5 else []
-            red_bans_elem = cols[6].select('span.champion-sprite') if len(cols) > 6 else []
+                    result_blue = 'Win' if winner_team == blue_team else 'Loss'
+                    result_red = 'Win' if winner_team == red_team else 'Loss'
+                    if winner_team == "unknown": result_blue = result_red = 'Loss'
 
-            for team, bans in [(blue_team, blue_bans_elem), (red_team, red_bans_elem)]:
-                for ban in bans:
-                    champion = get_champion(ban)
-                    if champion:
-                        team_data[team]['Bans'][champion] += 1
+                    # Баны (используем .sprite.champion-sprite)
+                    blue_ban_spans = cols[5].select('span.sprite.champion-sprite')
+                    red_ban_spans = cols[6].select('span.sprite.champion-sprite')
+                    # Берем только первые 3 для статистики банов оппонента
+                    blue_bans_first3 = [get_champion_from_title(ban) for ban in blue_ban_spans[:3] if get_champion_from_title(ban) != "N/A"]
+                    red_bans_first3 = [get_champion_from_title(ban) for ban in red_ban_spans[:3] if get_champion_from_title(ban) != "N/A"]
 
-            for team, opponent, opponent_bans in [(blue_team, red_team, red_bans_elem), (red_team, blue_team, blue_bans_elem)]:
-                for ban in opponent_bans[:3]:
-                    champion = get_champion(ban)
-                    if champion:
-                        if team == blue_team:
-                            team_data[team]['OpponentBlueBans'][champion] += 1
-                        else:
-                            team_data[team]['OpponentRedBans'][champion] += 1
+                    # Пики (предполагаем порядок ролей Top->Sup)
+                    blue_pick_spans = cols[7].select('span.sprite.champion-sprite')
+                    red_pick_spans = cols[8].select('span.sprite.champion-sprite')
+                    blue_picks_role_ordered = [get_champion_from_title(pick) for pick in blue_pick_spans]
+                    red_picks_role_ordered = [get_champion_from_title(pick) for pick in red_pick_spans]
 
-            blue_picks_elem = cols[7].select('span.sprite.champion-sprite') if len(cols) > 7 else []
-            red_picks_elem = cols[8].select('span.sprite.champion-sprite') if len(cols) > 8 else []
+                    # Дополняем до 5 пиков, если нужно
+                    while len(blue_picks_role_ordered) < 5: blue_picks_role_ordered.append("N/A")
+                    while len(red_picks_role_ordered) < 5: red_picks_role_ordered.append("N/A")
 
-            roles = ['Top', 'Jungle', 'Mid', 'ADC', 'Support']
-            blue_picks = {role: get_champion(pick) for role, pick in zip(roles, blue_picks_elem) if pick}
-            red_picks = {role: get_champion(pick) for role, pick in zip(roles, red_picks_elem) if pick}
+                    # --- Обновление статистики ---
+                    # Синяя команда
+                    stats_blue = team_data[blue_team]
+                    stats_blue['MatchResults'].append({'opponent': red_team, 'side': 'blue', 'win': result_blue == 'Win'})
+                    for opp_ban in red_bans_first3: stats_blue['OpponentRedBansFirst3'][opp_ban] += 1 # Баны оппонента (красного)
+                    blue_picks_map = {}
+                    for role_idx, champ in enumerate(blue_picks_role_ordered[:5]):
+                        role = roles[role_idx]
+                        stats_blue[role][champ]['games'] += 1 # Увеличиваем счетчик игр для N/A тоже
+                        if result_blue == 'Win': stats_blue[role][champ]['wins'] += 1
+                        if champ != "N/A": blue_picks_map[role] = champ
 
-            for team, picks, result in [(blue_team, blue_picks, result_blue), (red_team, red_picks, result_red)]:
-                for role in roles:
-                    champion = picks.get(role, "")
-                    if champion:
-                        team_data[team][role][champion]['games'] += 1
-                        if result == 'Win':
-                            team_data[team][role][champion]['wins'] += 1
-                    else:
-                        if role not in team_data[team] or not any(data['games'] > 0 for data in team_data[team][role].values()):
-                            team_data[team][role]["N/A"]['games'] += 1
-                            if result == 'Win':
-                                team_data[team][role]["N/A"]['wins'] += 1
+                    # Красная команда
+                    stats_red = team_data[red_team]
+                    stats_red['MatchResults'].append({'opponent': blue_team, 'side': 'red', 'win': result_red == 'Win'})
+                    for opp_ban in blue_bans_first3: stats_red['OpponentBlueBansFirst3'][opp_ban] += 1 # Баны оппонента (синего)
+                    red_picks_map = {}
+                    for role_idx, champ in enumerate(red_picks_role_ordered[:5]):
+                        role = roles[role_idx]
+                        stats_red[role][champ]['games'] += 1
+                        if result_red == 'Win': stats_red[role][champ]['wins'] += 1
+                        if champ != "N/A": red_picks_map[role] = champ
 
-                duo_pairs = [('Top', 'Jungle'), ('Jungle', 'Mid'), ('Jungle', 'Support'), ('ADC', 'Support')]
-                for role1, role2 in duo_pairs:
-                    champ1 = picks.get(role1, "N/A")
-                    champ2 = picks.get(role2, "N/A")
-                    if champ1 != "N/A" and champ2 != "N/A":
-                        duo_key = (champ1, champ2, role1, role2)
-                        team_data[team]['DuoPicks'][duo_key]['games'] += 1
-                        if result == 'Win':
-                            team_data[team]['DuoPicks'][duo_key]['wins'] += 1
+                    # Дуо-пики
+                    duo_pairs = [('Top', 'Jungle'), ('Jungle', 'Mid'), ('Jungle', 'Support'), ('ADC', 'Support')]
+                    for r1, r2 in duo_pairs:
+                        # Blue Duo
+                        c1_b, c2_b = blue_picks_map.get(r1), blue_picks_map.get(r2)
+                        if c1_b and c2_b:
+                            key_b = tuple(sorted((c1_b, c2_b))) + tuple(sorted((r1, r2)))
+                            stats_blue['DuoPicks'][key_b]['games'] += 1
+                            if result_blue == 'Win': stats_blue['DuoPicks'][key_b]['wins'] += 1
+                        # Red Duo
+                        c1_r, c2_r = red_picks_map.get(r1), red_picks_map.get(r2)
+                        if c1_r and c2_r:
+                            key_r = tuple(sorted((c1_r, c2_r))) + tuple(sorted((r1, r2)))
+                            stats_red['DuoPicks'][key_r]['games'] += 1
+                            if result_red == 'Win': stats_red['DuoPicks'][key_r]['wins'] += 1
 
+                except Exception as e:
+                    st.error(f"Error processing MH row {i+1} in table {table_index+1}: {e}")
+                    print(f"MH Error details: Row index {i+1}, Table index {table_index+1}, URL: {url}")
+
+    print("Finished fetching Match History Data.")
     return dict(team_data)
 # Fetch first bans data
 def fetch_first_bans_data():
@@ -369,210 +376,215 @@ def get_champion_from_span(span_tag):
     return "N/A"
 
 # Fetch draft data
+def get_champion_from_draft_cell(cell):
+    if not cell: return "N/A"
+    # Try the specific structure first: td -> span.pbh-cn -> span.sprite[title]
+    pbh_cn = cell.select_one('span.pbh-cn')
+    if pbh_cn:
+        sprite = pbh_cn.select_one('span.sprite.champion-sprite')
+        if sprite and 'title' in sprite.attrs:
+            return sprite['title']
+        # Fallback to data-champion on pbh-cn if title is missing
+        if 'data-champion' in pbh_cn.attrs:
+             champ_name = pbh_cn['data-champion']
+             # Basic normalization example:
+             if champ_name.lower() == 'monkeyking': return 'Wukong'
+             if champ_name.lower() == 'jarvaniv': return 'Jarvan IV'
+             if champ_name.lower() == 'kaisa': return "Kai'Sa"
+             # Add more normalizations if needed based on data-champion values
+             # Heuristic: Capitalize except for apostrophes or known multi-word names
+             if "'" in champ_name or " " in champ_name: # Basic check
+                 return champ_name # Assume it's already correct
+             else:
+                 return champ_name.capitalize()
+    # Fallback for simpler structures (like maybe bans in some old formats)
+    sprite = cell.select_one('span.sprite.champion-sprite')
+    if sprite and 'title' in sprite.attrs:
+        return sprite['title']
+    return "N/A"
+
+# Helper to get champion from potentially multiple spans in a cell (for P/B table)
+def get_champions_from_draft_pick_cell(cell):
+    champions = []
+    if not cell: return ["N/A"]
+    spans = cell.select('span.pbh-cn')
+    if spans:
+        for span in spans:
+             sprite = span.select_one('span.sprite.champion-sprite')
+             if sprite and 'title' in sprite.attrs:
+                 champions.append(sprite['title'])
+             elif 'data-champion' in span.attrs:
+                  champ_name = span['data-champion']
+                  # Add normalization if needed
+                  if champ_name.lower() == 'monkeyking': champ_name = 'Wukong'
+                  elif champ_name.lower() == 'jarvaniv': champ_name = 'Jarvan IV'
+                  elif champ_name.lower() == 'kaisa': champ_name = "Kai'Sa"
+                  elif "'" not in champ_name and " " not in champ_name: champ_name = champ_name.capitalize()
+                  champions.append(champ_name)
+             else:
+                  champions.append("N/A")
+    else: # Fallback if no pbh-cn spans
+         sprite = cell.select_one('span.sprite.champion-sprite')
+         if sprite and 'title' in sprite.attrs:
+             champions.append(sprite['title'])
+
+    return champions if champions else ["N/A"]
+
+
+# Fetch draft data for visual draft display and team's first 3 bans
 def fetch_draft_data():
+    print("Fetching Draft (Picks/Bans Table) Data (for Draft Display & Team Bans)...")
     team_drafts = defaultdict(list)
-    match_counter = defaultdict(int)  # Match counter for each team pair
-    team_wins_series = defaultdict(lambda: {'blue': 0, 'red': 0}) # Track wins per side for a series key
+    match_counter = defaultdict(int)
+    team_wins_series = defaultdict(lambda: defaultdict(int))
 
     for tournament_name, urls in TOURNAMENT_URLS.items():
         url = urls["picks_and_bans"]
+        print(f"Fetching P/B from: {url}")
         headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers)
-
-        if response.status_code != 200:
-            st.error(f"Failed to load {tournament_name} Picks and Bans page (code {response.status_code})")
+        try:
+            response = requests.get(url, headers=headers, timeout=20)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            st.error(f"P/B Fetch Error for {tournament_name}: {e}")
             continue
 
         soup = BeautifulSoup(response.content, 'html.parser')
         draft_tables = soup.select('table.wikitable.plainlinks.hoverable-rows.column-show-hide-1')
         if not draft_tables:
-            st.warning(f"Draft tables not found on the {tournament_name} page.")
+            st.warning(f"No P/B tables found for {tournament_name}")
             continue
+        print(f"Found {len(draft_tables)} P/B tables for {tournament_name}.")
 
-        for table in draft_tables:
-            # Process rows normally, no reverse needed if match_counter handles series order
-            rows = table.select('tr')[1:]  # Skip header
+        for table_index, table in enumerate(draft_tables):
+            print(f"Processing P/B table {table_index + 1}...")
+            rows = table.select('tr')
+            print(f"Found {len(rows) - 1} P/B rows.")
 
-            for row in rows:
+            for i, row in enumerate(rows[1:]):
                 cols = row.select('td')
-                if len(cols) < 24:  # Minimum columns for a complete row
-                    print(f"Skipping row, not enough columns: {len(cols)}")
+                 # Индексы: 0:Week 1:Blue 2:Red 3:Score 4:Patch 5:BB1 6:RB1 ... 10:RB3 11:BP1 12:RP1/2 13:BP2/3 14:RP3 15:RB4 16:BB4 17:RB5 18:BB5 19:RP4 20:BP4/5 21:RP5 22:SB 23:VOD?
+                if len(cols) < 22:
+                    print(f"Skipping P/B row {i+1}, cols={len(cols)} < 22")
                     continue
 
-                # --- Извлечение названий команд (оставляем как было) ---
-                blue_team = "unknown blue"
-                red_team = "unknown red"
-                # (Ваш код извлечения blue_team и red_team...)
-                 # Пробуем извлечь из атрибута title ячейки
-                if len(cols) > 1 and 'title' in cols[1].attrs:
-                    blue_team = cols[1]['title'].strip().lower()
-                if len(cols) > 2 and 'title' in cols[2].attrs:
-                    red_team = cols[2]['title'].strip().lower()
+                try:
+                    blue_team_raw = cols[1].get('title', cols[1].text).strip().replace("⁠", "")
+                    red_team_raw = cols[2].get('title', cols[2].text).strip().replace("⁠", "")
+                    blue_team = normalize_team_name(blue_team_raw)
+                    red_team = normalize_team_name(red_team_raw)
 
-                # Если не нашли title, пробуем .to_hasTooltip
-                if blue_team == "unknown blue":
-                    blue_team_elem = cols[1].select_one('.to_hasTooltip') if len(cols) > 1 else None
-                    if blue_team_elem and 'title' in blue_team_elem.attrs:
-                        blue_team = blue_team_elem['title'].strip().lower().replace("||tooltip:", "").split("||")[0]
-                    elif blue_team_elem:
-                        blue_team = blue_team_elem.text.strip().lower()
+                    if blue_team == "unknown" or red_team == "unknown":
+                        print(f"Skipping P/B row {i+1}: Unknown team (Raw Blue: '{blue_team_raw}', Raw Red: '{red_team_raw}')")
+                        continue
 
-                if red_team == "unknown red":
-                    red_team_elem = cols[2].select_one('.to_hasTooltip') if len(cols) > 2 else None
-                    if red_team_elem and 'title' in red_team_elem.attrs:
-                        red_team = red_team_elem['title'].strip().lower().replace("||tooltip:", "").split("||")[0]
-                    elif red_team_elem:
-                        red_team = red_team_elem.text.strip().lower()
+                    winner_side = None
+                    if 'pbh-winner' in cols[1].get('class', []): winner_side = 'blue'
+                    elif 'pbh-winner' in cols[2].get('class', []): winner_side = 'red'
 
-                # Если не нашли .to_hasTooltip, пробуем img alt
-                if blue_team == "unknown blue":
-                    blue_team_img = cols[1].select_one('img') if len(cols) > 1 else None
-                    if blue_team_img and 'alt' in blue_team_img.attrs:
-                        blue_team = blue_team_img['alt'].replace('logo std', '').strip().lower()
+                    print(f"P/B Row {i+1}: Blue='{blue_team}' Red='{red_team}' Winner Side='{winner_side}'")
 
-                if red_team == "unknown red":
-                    red_team_img = cols[2].select_one('img') if len(cols) > 2 else None
-                    if red_team_img and 'alt' in red_team_img.attrs:
-                        red_team = red_team_img['alt'].replace('logo std', '').strip().lower()
+                    match_key = tuple(sorted((blue_team, red_team)))
+                    match_number = match_counter[match_key] + 1
+                    match_counter[match_key] = match_number
 
-                # Если ничего не нашли, пробуем текст ячейки
-                if blue_team == "unknown blue":
-                    blue_team = cols[1].text.strip().lower() if len(cols) > 1 else "unknown blue"
-                if red_team == "unknown red":
-                    red_team = cols[2].text.strip().lower() if len(cols) > 2 else "unknown red"
+                    current_blue_wins = team_wins_series[match_key]['blue']
+                    current_red_wins = team_wins_series[match_key]['red']
+                    if winner_side == 'blue': current_blue_wins += 1
+                    elif winner_side == 'red': current_red_wins += 1
+                    team_wins_series[match_key]['blue'] = current_blue_wins
+                    team_wins_series[match_key]['red'] = current_red_wins
 
-                # Убедимся, что команда не пустая
-                if not blue_team or blue_team.isspace():
-                    blue_team = "unknown blue"
-                if not red_team or red_team.isspace():
-                    red_team = "unknown red"
+                    # --- Баны [B1, B2, B3, B4, B5] ---
+                    blue_ban_indices = [5, 7, 9, 16, 18]
+                    red_ban_indices = [6, 8, 10, 15, 17]
+                    blue_bans = [get_champion_from_draft_cell(cols[idx]) for idx in blue_ban_indices]
+                    red_bans = [get_champion_from_draft_cell(cols[idx]) for idx in red_ban_indices]
 
-                # Нормализация
-                blue_team = normalize_team_name(blue_team)
-                red_team = normalize_team_name(red_team)
+                    # --- Пики в визуальном порядке [P1, P2, P3, P4, P5] ---
+                    blue_picks_ordered = ["N/A"] * 5
+                    red_picks_ordered = ["N/A"] * 5
 
-                if blue_team == "unknown" or red_team == "unknown":
-                    print("Skipping row due to unknown team name")
-                    continue
-                # --- Конец извлечения названий команд ---
+                    # BP1 (col 11)
+                    bp1_champs = get_champions_from_draft_pick_cell(cols[11])
+                    if bp1_champs: blue_picks_ordered[0] = bp1_champs[0]
+                    # RP1, RP2 (col 12)
+                    rp1_2_champs = get_champions_from_draft_pick_cell(cols[12])
+                    if len(rp1_2_champs) > 0: red_picks_ordered[0] = rp1_2_champs[0]
+                    if len(rp1_2_champs) > 1: red_picks_ordered[1] = rp1_2_champs[1]
+                    # BP2, BP3 (col 13)
+                    bp2_3_champs = get_champions_from_draft_pick_cell(cols[13])
+                    if len(bp2_3_champs) > 0: blue_picks_ordered[1] = bp2_3_champs[0]
+                    if len(bp2_3_champs) > 1: blue_picks_ordered[2] = bp2_3_champs[1]
+                    # RP3 (col 14)
+                    rp3_champs = get_champions_from_draft_pick_cell(cols[14])
+                    if rp3_champs: red_picks_ordered[2] = rp3_champs[0]
+                    # RP4 (col 19)
+                    rp4_champs = get_champions_from_draft_pick_cell(cols[19])
+                    if rp4_champs: red_picks_ordered[3] = rp4_champs[0]
+                    # BP4, BP5 (col 20)
+                    bp4_5_champs = get_champions_from_draft_pick_cell(cols[20])
+                    if len(bp4_5_champs) > 0: blue_picks_ordered[3] = bp4_5_champs[0]
+                    if len(bp4_5_champs) > 1: blue_picks_ordered[4] = bp4_5_champs[1]
+                    # RP5 (col 21)
+                    rp5_champs = get_champions_from_draft_pick_cell(cols[21])
+                    if rp5_champs: red_picks_ordered[4] = rp5_champs[0]
+
+                    # --- VOD ---
+                    vod_link = "N/A"
+                    # Проверяем, есть ли колонка VOD (индекс может меняться, часто последняя видимая)
+                    vod_col_index = -1 # Ищем с конца
+                    for col_idx in range(len(cols)-1, 21, -1):
+                         link = cols[col_idx].select_one('a')
+                         # Предполагаем, что VOD - это внешняя ссылка
+                         if link and 'href' in link.attrs and not link['href'].startswith('/'):
+                              vod_link = link['href']
+                              break
+                         # Иногда ссылка на Scoreboard в предпоследней колонке
+                         elif link and 'href' in link.attrs and 'Scoreboards' in link['href'] and col_idx > 0:
+                              # Проверяем предыдущую колонку на VOD
+                               prev_link = cols[col_idx-1].select_one('a')
+                               if prev_link and 'href' in prev_link.attrs and not prev_link['href'].startswith('/'):
+                                   vod_link = prev_link['href']
+                                   break
 
 
-                # Определение победителя по классу pbh-winner
-                winner_side = None
-                if cols[1].get('class') and 'pbh-winner' in cols[1].get('class', []):
-                   winner_side = 'blue'
-                elif cols[2].get('class') and 'pbh-winner' in cols[2].get('class', []):
-                   winner_side = 'red'
+                    # --- Сохранение данных ---
+                    draft_base = {
+                        'winner_side': winner_side,
+                        'blue_wins_series': current_blue_wins,
+                        'red_wins_series': current_red_wins,
+                        'match_key': match_key,
+                        'match_number': match_number,
+                        'vod_link': vod_link,
+                        'tournament': tournament_name,
+                        'absolute_blue_team': blue_team,
+                        'absolute_red_team': red_team
+                    }
+                    # Для Blue Team
+                    draft_blue = draft_base.copy()
+                    draft_blue.update({
+                        'opponent': red_team, 'side': 'blue',
+                        'team_bans': blue_bans, 'opponent_bans': red_bans,
+                        'team_picks_ordered': blue_picks_ordered,
+                        'opponent_picks_ordered': red_picks_ordered,
+                    })
+                    team_drafts[blue_team].append(draft_blue)
+                    # Для Red Team
+                    draft_red = draft_base.copy()
+                    draft_red.update({
+                        'opponent': blue_team, 'side': 'red',
+                        'team_bans': red_bans, 'opponent_bans': blue_bans,
+                        'team_picks_ordered': red_picks_ordered,
+                        'opponent_picks_ordered': blue_picks_ordered,
+                    })
+                    team_drafts[red_team].append(draft_red)
 
-                # Обновление счётчика игр и побед в серии
-                match_key = tuple(sorted((blue_team, red_team)))
-                match_counter[match_key] += 1
-                match_number = match_counter[match_key]
+                except Exception as e:
+                    st.error(f"Error processing P/B row {i+1} in table {table_index+1}: {e}")
+                    print(f"P/B Error details: Row index {i+1}, Table index {table_index+1}, URL: {url}")
 
-                # Обновляем счетчик побед для серии
-                current_blue_wins = team_wins_series[match_key]['blue']
-                current_red_wins = team_wins_series[match_key]['red']
-                if winner_side == 'blue':
-                    team_wins_series[match_key]['blue'] += 1
-                elif winner_side == 'red':
-                    team_wins_series[match_key]['red'] += 1
-
-                # --- Извлечение банов ---
-                # Индексы колонок банов: BB1(5), RB1(6), BB2(7), RB2(8), BB3(9), RB3(10), RB4(15), BB4(16), RB5(17), BB5(18)
-                blue_ban_indices = [5, 7, 9, 16, 18]
-                red_ban_indices = [6, 8, 10, 15, 17]
-                blue_bans = [get_champion_from_span(cols[idx].select_one('.pbh-cn')) for idx in blue_ban_indices]
-                red_bans = [get_champion_from_span(cols[idx].select_one('.pbh-cn')) for idx in red_ban_indices]
-
-                # --- Извлечение пиков для визуального порядка [P1, P2, P3, P4, P5] ---
-                blue_picks_ordered = ["N/A"] * 5
-                red_picks_ordered = ["N/A"] * 5
-                # BP1 (col 11)
-                blue_picks_ordered[0] = get_champion_from_span(cols[11].select_one('.pbh-cn'))
-                # RP1, RP2 (col 12)
-                rp1_2_spans = cols[12].select('.pbh-cn')
-                if len(rp1_2_spans) > 0: red_picks_ordered[0] = get_champion_from_span(rp1_2_spans[0])
-                if len(rp1_2_spans) > 1: red_picks_ordered[1] = get_champion_from_span(rp1_2_spans[1])
-                # BP2, BP3 (col 13)
-                bp2_3_spans = cols[13].select('.pbh-cn')
-                if len(bp2_3_spans) > 0: blue_picks_ordered[1] = get_champion_from_span(bp2_3_spans[0])
-                if len(bp2_3_spans) > 1: blue_picks_ordered[2] = get_champion_from_span(bp2_3_spans[1])
-                # RP3 (col 14)
-                red_picks_ordered[2] = get_champion_from_span(cols[14].select_one('.pbh-cn'))
-                # RP4 (col 19)
-                red_picks_ordered[3] = get_champion_from_span(cols[19].select_one('.pbh-cn'))
-                # BP4, BP5 (col 20)
-                bp4_5_spans = cols[20].select('.pbh-cn')
-                if len(bp4_5_spans) > 0: blue_picks_ordered[3] = get_champion_from_span(bp4_5_spans[0])
-                if len(bp4_5_spans) > 1: blue_picks_ordered[4] = get_champion_from_span(bp4_5_spans[1])
-                # RP5 (col 21)
-                red_picks_ordered[4] = get_champion_from_span(cols[21].select_one('.pbh-cn'))
-
-                # --- Извлечение пиков с ролями (если нужно) ---
-                roles = ['Top', 'Jungle', 'Mid', 'ADC', 'Support']
-                # Сопоставляем извлеченные ordered пики с ролями (предполагая стандартный порядок ролей в таблице)
-                # Это может быть неточно, если роли в таблице Fandom не соответствуют порядку пиков!
-                # Более надежный способ требует парсинга иконок ролей, если они есть.
-                # Пока оставляем просто список чемпионов. Если нужны роли, логику нужно усложнять.
-                blue_picks_final = list(zip(blue_picks_ordered, roles)) # Примерное сопоставление
-                red_picks_final = list(zip(red_picks_ordered, roles))   # Примерное сопоставление
-
-                # --- Извлечение ссылки на VOD ---
-                vod_elem = cols[23].select_one('a')
-                vod_link = vod_elem['href'] if vod_elem and 'href' in vod_elem.attrs else "N/A"
-
-                # --- Сохранение данных относительно каждой команды ---
-                draft_base = {
-                    'winner_side': winner_side,
-                    'blue_wins_series': team_wins_series[match_key]['blue'], # Обновленный счет
-                    'red_wins_series': team_wins_series[match_key]['red'],     # Обновленный счет
-                    'match_key': match_key,
-                    'match_number': match_number,
-                    'vod_link': vod_link,
-                    'tournament': tournament_name,
-                    'absolute_blue_team': blue_team, # Для справки
-                    'absolute_red_team': red_team    # Для справки
-                }
-
-                # Сохранение для Blue Team
-                draft_blue = draft_base.copy()
-                draft_blue.update({
-                    'opponent': red_team,
-                    'side': 'blue',
-                    'team_bans': blue_bans,
-                    'opponent_bans': red_bans,
-                    'team_picks_ordered': blue_picks_ordered,       # Визуальный порядок
-                    'opponent_picks_ordered': red_picks_ordered, # Визуальный порядок
-                    'team_picks_final': blue_picks_final,           # С ролями (примерно)
-                    'opponent_picks_final': red_picks_final,     # С ролями (примерно)
-                })
-                team_drafts[blue_team].append(draft_blue)
-
-                # Сохранение для Red Team
-                draft_red = draft_base.copy()
-                draft_red.update({
-                    'opponent': blue_team,
-                    'side': 'red',
-                    'team_bans': red_bans,
-                    'opponent_bans': blue_bans,
-                    'team_picks_ordered': red_picks_ordered,        # Визуальный порядок
-                    'opponent_picks_ordered': blue_picks_ordered,  # Визуальный порядок
-                    'team_picks_final': red_picks_final,            # С ролями (примерно)
-                    'opponent_picks_final': blue_picks_final,      # С ролями (примерно)
-                })
-                team_drafts[red_team].append(draft_red)
-
-    # Отладочный вывод (можно скорректировать для новых полей)
-    # for team in team_drafts:
-    #     print(f"Team: {team}")
-    #     for draft in team_drafts[team]:
-    #         print(f"  Draft vs {draft['opponent']} (Side: {draft['side']}):")
-    #         print(f"    Team Bans: {draft['team_bans']}")
-    #         print(f"    Opponent Bans: {draft['opponent_bans']}")
-    #         print(f"    Team Picks Ordered: {draft['team_picks_ordered']}")
-    #         print(f"    Opponent Picks Ordered: {draft['opponent_picks_ordered']}")
-    #         print(f"    Winner Side: {draft['winner_side']}")
-
+    print("Finished fetching Draft (Picks/Bans Table) Data.")
     return dict(team_drafts)
 # Helper functions
 def get_champion(span_tag):
