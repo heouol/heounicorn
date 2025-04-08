@@ -39,7 +39,17 @@ team_rosters = {
         "seaz": {"game_name": ["고군분투일취월장", "ASV13 08"], "tag_line": ["KR6", "1130"], "role": "UTILITY"},
     }
 }
-
+DEFAULT_NOTES_DATA = { # Определим константу для умолчаний
+    "tables": [
+        [
+            ["", "Ban", ""], ["", "Ban", ""], ["", "Ban", ""],
+            ["", "Pick", ""], ["", "Pick", ""], ["", "Pick", ""],
+            ["", "Ban", ""], ["", "Ban", ""],
+            ["", "Pick", ""], ["", "Pick", ""]
+        ] for _ in range(6)
+    ],
+    "notes_text": ""
+}
 # Get the latest patch version from Data Dragon
 def get_latest_patch_version():
     try:
@@ -844,47 +854,56 @@ def load_notes_data(team_name, filename_prefix="notes_data"):
 
 
 def prime_league_page(selected_team):
+    # Отладочный вывод при входе в функцию
+    print(f"==> START: prime_league_page (Team: {selected_team})")
+
     st.title("Prime League 1st Division 2025 Spring - Pick & Ban Statistics")
+
+    # Проверяем selected_team на None или пустое значение
+    if not selected_team:
+        st.error("No team selected. Please select a team from the sidebar.")
+        print("<== END: prime_league_page (No team selected)")
+        return # Выходим, если команда не выбрана
 
     normalized_selected_team = normalize_team_name(selected_team)
 
     st.header(f"Team: {selected_team}")
 
-    # --- Кнопка обновления и проверка данных в session_state ---
-    # Убедимся, что все данные загружены при необходимости
-    data_loaded = ('match_history_data' in st.session_state and
-                   'first_bans_data' in st.session_state and
-                   'draft_data' in st.session_state)
+    # --- Кнопка обновления ---
+    # Данные должны быть загружены в main() перед вызовом этой функции
+    # Проверяем наличие данных на всякий случай
+    if 'match_history_data' not in st.session_state or 'draft_data' not in st.session_state:
+         st.error("Required data not found in session state. Please try updating data from the main page or restart.")
+         print("<== END: prime_league_page (Missing data in session state)")
+         return
 
-    col_update, col_status = st.columns([1, 5])
-    with col_update:
-        if st.button("Update Data"):
-            with st.spinner("Updating data... This may take a while."):
-                st.session_state.match_history_data = fetch_match_history_data()
-                
-                st.session_state.draft_data = fetch_draft_data()
-            st.success("Data updated!")
-            st.rerun() # Перезапускаем для отображения обновленных данных
-    with col_status:
-         if not data_loaded:
-              st.warning("Data not fully loaded. Click 'Update Data'.")
+    # Отображаем кнопку обновления здесь, но логика обновления остается в main()
+    # (Или переносим логику обновления полностью сюда)
+    # Вариант 1: Кнопка просто для информации (обновление в main)
+    # st.button("Update Data (Triggered on Main Page)", disabled=True)
 
-    # Загрузка данных, если их нет
-    if not data_loaded:
-         if 'match_history_data' not in st.session_state:
-              st.session_state.match_history_data = fetch_match_history_data()
-         if 'draft_data' not in st.session_state:
-              st.session_state.draft_data = fetch_draft_data()
-         st.rerun() # Перезапускаем после загрузки
+    # Вариант 2: Перенос логики обновления сюда (если удобнее)
+    if st.button("Update All Data"):
+        with st.spinner("Updating data... This may take a while."):
+            # Предполагаем, что fetch_... функции импортированы
+            from .data_fetching import fetch_match_history_data, fetch_draft_data
+            st.session_state.match_history_data = fetch_match_history_data()
+            st.session_state.draft_data = fetch_draft_data()
+            # Убираем first_bans_data
+            # if 'first_bans_data' in st.session_state:
+            #     del st.session_state['first_bans_data']
+        st.success("Data updated!")
+        st.rerun() # Перезапускаем для отображения обновленных данных
 
-    # Initialize session state for button toggles if not exists
+
+    # --- Инициализация кнопок отображения секций ---
     if 'show_picks' not in st.session_state: st.session_state.show_picks = False
     if 'show_bans' not in st.session_state: st.session_state.show_bans = False
     if 'show_duo_picks' not in st.session_state: st.session_state.show_duo_picks = False
     if 'show_drafts' not in st.session_state: st.session_state.show_drafts = True # По умолчанию показываем драфты
     if 'show_notes' not in st.session_state: st.session_state.show_notes = False
 
-    # Button controls for main sections
+    # --- Кнопки управления секциями ---
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         if st.button("Picks", key="picks_btn", use_container_width=True): st.session_state.show_picks = not st.session_state.show_picks
@@ -897,179 +916,155 @@ def prime_league_page(selected_team):
     with col5:
         if st.button("Notes", key="notes_btn", use_container_width=True): st.session_state.show_notes = not st.session_state.show_notes
 
-    # --- Отображение блоков Picks, Bans, Duo Picks (оставляем как было) ---
-    team_info = st.session_state.match_history_data.get(normalized_selected_team, {})
-    first_bans_info = st.session_state.first_bans_data.get(normalized_selected_team, {'BlueFirstBans': defaultdict(int), 'RedFirstBans': defaultdict(int)})
-    roles = ['Top', 'Jungle', 'Mid', 'ADC', 'Support']
 
+    # --- Получение данных для отображения ---
+    # Используем .get() с пустым словарем по умолчанию для большей безопасности
+    team_info_mh = st.session_state.match_history_data.get(normalized_selected_team, {})
+    all_draft_data = st.session_state.get('draft_data', {})
+    draft_data_list = all_draft_data.get(normalized_selected_team, [])
+
+
+    # ================== Секция Picks ==================
     if st.session_state.show_picks:
-        st.subheader("Picks")
+        st.subheader("Picks (Role-Based Stats)")
         st.markdown("<hr style='border: 2px solid #333; margin: 10px 0;'>", unsafe_allow_html=True)
+        roles = ['Top', 'Jungle', 'Mid', 'ADC', 'Support']
         columns = st.columns(len(roles))
         for i, role in enumerate(roles):
             with columns[i]:
                 st.subheader(f"{role}")
-                # Используем данные из match_history для пиков по ролям
-                role_data = team_info.get(role, {})
+                # Используем данные из match_history_data для пиков по ролям
+                role_data = team_info_mh.get(role, {}) # .get() для безопасности
                 if role_data:
                     stats = []
-                    for champ, data in role_data.items():
-                        if champ != "N/A" and data.get('games', 0) > 0:
-                            winrate = (data['wins'] / data['games'] * 100) if data['games'] > 0 else 0
+                    # Сортируем чемпионов по количеству игр
+                    sorted_champs = sorted(role_data.items(), key=lambda item: item[1].get('games', 0), reverse=True)
+                    for champ, data in sorted_champs:
+                        games = data.get('games', 0)
+                        wins = data.get('wins', 0)
+                        # Отображаем только если были игры (исключаем N/A с 0 игр)
+                        if games > 0:
+                            winrate = (wins / games * 100) if games > 0 else 0
                             stats.append({
-                                'Icon': get_champion_icon(champ),
+                                'Icon': get_champion_icon(champ), # Иконка для N/A тоже нужна?
                                 'Champion': champ,
-                                'Matches': data['games'],
+                                'Matches': games,
                                 'Win Rate (%)': winrate
                             })
                     if stats:
                         df = pd.DataFrame(stats)
-                        df = df.sort_values('Matches', ascending=False)
+                        # Применяем цветовую раскраску к Win Rate
                         df['Win Rate (%)'] = df['Win Rate (%)'].apply(color_win_rate)
-                        # Убираем пустую колонку индекса
+                        # Убираем пустую колонку индекса при конвертации в HTML
                         html = df.to_html(escape=False, index=False, classes='styled-table small-table')
                         st.markdown(html, unsafe_allow_html=True)
                     else:
                          st.write("No pick data for this role.")
                 else:
-                    st.write("No data structure for this role.")
+                    st.write("No data structure found for this role.")
 
 
+    # ================== Секция Bans ==================
     if st.session_state.show_bans:
-        # Все строки ниже должны иметь ОДИНАКОВЫЙ, больший отступ (например, +4 пробела)
-        st.subheader("Bans") # <--- Строка 888, начало блока с отступом
+        st.subheader("Bans")
         st.markdown("<hr style='border: 2px solid #333; margin: 10px 0;'>", unsafe_allow_html=True)
         col1, col2, divider_col, col3, col4 = st.columns([1, 1, 0.1, 1, 1])
 
         # --- Первые 3 бана команды (Данные из st.session_state.draft_data) ---
-        all_draft_data = st.session_state.get('draft_data', {})
-        # Используйте .get(), чтобы избежать KeyError, если normalized_selected_team не найден
-        draft_data_list = all_draft_data.get(normalized_selected_team, [])
-
-        # Собираем статистику по первым 3 банам команды на каждой стороне
         team_blue_first3_bans = defaultdict(int)
         team_red_first3_bans = defaultdict(int)
-        if draft_data_list:
+        if draft_data_list: # Используем данные, полученные ранее
             for draft in draft_data_list:
                 side = draft.get('side')
-                # team_bans должен быть списком из 5 банов ['B1', 'B2', 'B3', 'B4', 'B5']
-                # Используем .get() для безопасного доступа
                 team_bans = draft.get('team_bans', [])
                 if side == 'blue':
-                    for ban in team_bans[:3]: # Берем первые три
+                    for ban in team_bans[:3]:
                         if ban != "N/A": team_blue_first3_bans[ban] += 1
                 elif side == 'red':
-                    for ban in team_bans[:3]: # Берем первые три
+                    for ban in team_bans[:3]:
                         if ban != "N/A": team_red_first3_bans[ban] += 1
 
         with col1:
             st.subheader("First 3 Bans (as Blue Side)")
             if team_blue_first3_bans:
                 blue_bans_stats = []
-                # Сортируем по убыванию количества
                 sorted_blue_bans = sorted(team_blue_first3_bans.items(), key=lambda item: item[1], reverse=True)
                 for champ, count in sorted_blue_bans:
-                    # Добавим проверку на N/A перед использованием get_champion_icon
                     if champ != "N/A":
-                        blue_bans_stats.append({
-                            'Icon': get_champion_icon(champ), 'Champion': champ, 'Count': count
-                        })
-                if blue_bans_stats: # Проверяем, есть ли что отображать
+                        blue_bans_stats.append({'Icon': get_champion_icon(champ), 'Champion': champ, 'Count': count})
+                if blue_bans_stats:
                     df_blue_bans = pd.DataFrame(blue_bans_stats)
                     html_blue_bans = df_blue_bans.to_html(escape=False, index=False, classes='styled-table small-table')
                     st.markdown(html_blue_bans, unsafe_allow_html=True)
-                else:
-                    st.write("No valid first 3 blue side bans data.") # Уточнено сообщение
-            else:
-                st.write("No data for first 3 blue side bans.")
+                else: st.write("No valid first 3 blue side bans data.")
+            else: st.write("No data for first 3 blue side bans.")
 
         with col2:
             st.subheader("First 3 Bans (as Red Side)")
             if team_red_first3_bans:
                 red_bans_stats = []
-                 # Сортируем по убыванию количества
                 sorted_red_bans = sorted(team_red_first3_bans.items(), key=lambda item: item[1], reverse=True)
                 for champ, count in sorted_red_bans:
-                     if champ != "N/A":
-                        red_bans_stats.append({
-                            'Icon': get_champion_icon(champ), 'Champion': champ, 'Count': count
-                        })
-                if red_bans_stats: # Проверяем, есть ли что отображать
+                    if champ != "N/A":
+                        red_bans_stats.append({'Icon': get_champion_icon(champ), 'Champion': champ, 'Count': count})
+                if red_bans_stats:
                     df_red_bans = pd.DataFrame(red_bans_stats)
                     html_red_bans = df_red_bans.to_html(escape=False, index=False, classes='styled-table small-table')
                     st.markdown(html_red_bans, unsafe_allow_html=True)
-                else:
-                    st.write("No valid first 3 red side bans data.") # Уточнено сообщение
-            else:
-                st.write("No data for first 3 red side bans.")
+                else: st.write("No valid first 3 red side bans data.")
+            else: st.write("No data for first 3 red side bans.")
 
         # --- Первые 3 бана оппонента (Данные из st.session_state.match_history_data) ---
-        # Используем .get() для безопасного доступа
-        team_info = st.session_state.match_history_data.get(normalized_selected_team, {})
-
+        # Используем team_info_mh, полученные ранее
         with divider_col:
-            st.markdown(
-                """<div style='height: 100%; border-left: 2px solid #333; margin: 0 10px;'></div>""",
-                unsafe_allow_html=True
-            )
+            st.markdown("""<div style='height: 100%; border-left: 2px solid #333; margin: 0 10px;'></div>""", unsafe_allow_html=True)
 
         with col3:
-            st.subheader("Opponent's First 3 Bans (vs Blue)") # Когда ваша команда была BLUE
-            # Берем баны оппонента (КРАСНОГО), когда вы были синими
-            # Используем .get() для безопасного доступа
-            opponent_red_bans_data = team_info.get('OpponentRedBansFirst3', {})
+            st.subheader("Opponent's First 3 Bans (vs Blue)")
+            opponent_red_bans_data = team_info_mh.get('OpponentRedBansFirst3', {})
             if opponent_red_bans_data:
                 opponent_red_bans_stats = []
                 sorted_opp_red = sorted(opponent_red_bans_data.items(), key=lambda item: item[1], reverse=True)
                 for champ, count in sorted_opp_red:
                      if champ != "N/A":
-                        opponent_red_bans_stats.append({
-                            'Icon': get_champion_icon(champ), 'Champion': champ, 'Count': count
-                        })
-                if opponent_red_bans_stats: # Проверяем, есть ли что отображать
+                        opponent_red_bans_stats.append({'Icon': get_champion_icon(champ), 'Champion': champ, 'Count': count})
+                if opponent_red_bans_stats:
                     df_opponent_red_bans = pd.DataFrame(opponent_red_bans_stats)
                     html_opponent_red_bans = df_opponent_red_bans.to_html(escape=False, index=False, classes='styled-table small-table')
                     st.markdown(html_opponent_red_bans, unsafe_allow_html=True)
-                else:
-                    st.write("No valid opponent first 3 red bans data.") # Уточнено сообщение
-            else:
-                st.write("No data structure for opponent's first 3 red bans.")
+                else: st.write("No valid opponent first 3 red bans data.")
+            else: st.write("No data structure for opponent's first 3 red bans.")
 
         with col4:
-            st.subheader("Opponent's First 3 Bans (vs Red)") # Когда ваша команда была RED
-            # Берем баны оппонента (СИНЕГО), когда вы были красными
-            # Используем .get() для безопасного доступа
-            opponent_blue_bans_data = team_info.get('OpponentBlueBansFirst3', {})
+            st.subheader("Opponent's First 3 Bans (vs Red)")
+            opponent_blue_bans_data = team_info_mh.get('OpponentBlueBansFirst3', {})
             if opponent_blue_bans_data:
                 opponent_blue_bans_stats = []
                 sorted_opp_blue = sorted(opponent_blue_bans_data.items(), key=lambda item: item[1], reverse=True)
                 for champ, count in sorted_opp_blue:
                      if champ != "N/A":
-                        opponent_blue_bans_stats.append({
-                            'Icon': get_champion_icon(champ), 'Champion': champ, 'Count': count
-                        })
-                if opponent_blue_bans_stats: # Проверяем, есть ли что отображать
+                        opponent_blue_bans_stats.append({'Icon': get_champion_icon(champ), 'Champion': champ, 'Count': count})
+                if opponent_blue_bans_stats:
                     df_opponent_blue_bans = pd.DataFrame(opponent_blue_bans_stats)
                     html_opponent_blue_bans = df_opponent_blue_bans.to_html(escape=False, index=False, classes='styled-table small-table')
                     st.markdown(html_opponent_blue_bans, unsafe_allow_html=True)
-                else:
-                     st.write("No valid opponent first 3 blue bans data.") # Уточнено сообщение
-            else:
-                st.write("No data structure for opponent's first 3 blue bans.")
+                else: st.write("No valid opponent first 3 blue bans data.")
+            else: st.write("No data structure for opponent's first 3 blue bans.")
 
+
+    # ================== Секция Duo Picks ==================
     if st.session_state.show_duo_picks:
-         # --- Блок Duo Picks (оставляем как было) ---
         st.subheader("Duo Picks")
         st.markdown("<hr style='border: 2px solid #333; margin: 10px 0;'>", unsafe_allow_html=True)
-        duo_picks_data = team_info.get('DuoPicks', {})
+        # Используем team_info_mh, полученные ранее
+        duo_picks_data = team_info_mh.get('DuoPicks', {})
         duo_pairs_config = [
             {'roles': ('Top', 'Jungle'), 'title': 'Top-Jungle'},
             {'roles': ('Jungle', 'Mid'), 'title': 'Jungle-Mid'},
             {'roles': ('Jungle', 'Support'), 'title': 'Jungle-Support'},
             {'roles': ('ADC', 'Support'), 'title': 'ADC-Support'}
         ]
-
-        num_cols = 2 # Количество колонок для дуо-пиков
+        num_cols = 2
         cols = st.columns(num_cols)
         col_idx = 0
 
@@ -1080,107 +1075,106 @@ def prime_league_page(selected_team):
                 st.markdown(f"<h4 style='text-align: center;'>{title} Duo Picks</h4>", unsafe_allow_html=True)
 
                 duo_stats = []
-                for (champ1, champ2, r1, r2), data in duo_picks_data.items():
-                    # Проверяем обе комбинации ролей
-                    if (r1 == role1_target and r2 == role2_target) or \
-                       (r1 == role2_target and r2 == role1_target):
-                        if data.get('games', 0) > 0 and champ1 != "N/A" and champ2 != "N/A":
-                            winrate = (data['wins'] / data['games'] * 100) if data['games'] > 0 else 0
+                 # Сортируем дуо по количеству игр
+                sorted_duos = sorted(duo_picks_data.items(), key=lambda item: item[1].get('games', 0), reverse=True)
 
-                            # Определяем порядок для отображения
-                            c1_display, c2_display = (champ1, champ2) if r1 == role1_target else (champ2, champ1)
-                            icon1 = get_champion_icon(c1_display)
-                            icon2 = get_champion_icon(c2_display)
+                for duo_key, data in sorted_duos:
+                    # Распаковываем ключ: (champA, champB, roleA, roleB)
+                    champ1_key, champ2_key, role1_key, role2_key = duo_key # Порядок ролей в ключе соответствует sorted((r1, r2))
+                    games = data.get('games', 0)
+                    wins = data.get('wins', 0)
 
-                            duo_stats.append({
-                                f'Icon_{role1_target}': icon1,
-                                role1_target: c1_display,
-                                f'Icon_{role2_target}': icon2,
-                                role2_target: c2_display,
-                                'Matches': data['games'],
-                                'Win Rate (%)': winrate
-                            })
+                    # Проверяем, соответствует ли пара ролей текущей конфигурации
+                    current_pair_roles = {role1_key, role2_key}
+                    target_pair_roles = {role1_target, role2_target}
+
+                    if current_pair_roles == target_pair_roles and games > 0:
+                        winrate = (wins / games * 100) if games > 0 else 0
+
+                        # Определяем, какой чемпион соответствует какой роли для отображения
+                        c1_display = champ1_key if role1_key == role1_target else champ2_key
+                        c2_display = champ2_key if role1_key == role1_target else champ1_key
+                        icon1 = get_champion_icon(c1_display)
+                        icon2 = get_champion_icon(c2_display)
+
+                        duo_stats.append({
+                            f'Icon_{role1_target}': icon1, role1_target: c1_display,
+                            f'Icon_{role2_target}': icon2, role2_target: c2_display,
+                            'Matches': games, 'Win Rate (%)': winrate
+                        })
 
                 if duo_stats:
                     df_duo = pd.DataFrame(duo_stats)
-                    df_duo = df_duo.sort_values('Matches', ascending=False)
                     df_duo['Win Rate (%)'] = df_duo['Win Rate (%)'].apply(color_win_rate)
-                    # Формируем правильные колонки
                     display_columns = [f'Icon_{role1_target}', role1_target, f'Icon_{role2_target}', role2_target, 'Matches', 'Win Rate (%)']
-                    df_duo = df_duo[display_columns]
-                    html_duo = df_duo.to_html(escape=False, index=False, classes='styled-table small-table')
+                    # Убедимся, что колонки существуют перед переупорядочиванием
+                    valid_columns = [col for col in display_columns if col in df_duo.columns]
+                    df_duo_display = df_duo[valid_columns]
+
+                    html_duo = df_duo_display.to_html(escape=False, index=False, classes='styled-table small-table')
                     st.markdown(f"""<div style="display: flex; justify-content: center;">{html_duo}</div>""", unsafe_allow_html=True)
                 else:
-                    st.markdown(f"""<p style='text-align: center;'>No data on duo picks for {title}.</p>""", unsafe_allow_html=True)
-            col_idx += 1 # Переходим к следующей колонке
+                    st.markdown(f"""<p style='text-align: center;'>No data for {title} duo picks.</p>""", unsafe_allow_html=True)
+            col_idx += 1
 
-    # --- ИЗМЕНЕННЫЙ БЛОК DRAFTS ---
+
+    # ================== Секция Drafts ==================
     if st.session_state.show_drafts:
         st.subheader("Drafts")
         st.markdown("<hr style='border: 2px solid #333; margin: 10px 0;'>", unsafe_allow_html=True)
 
-        # Используем УЖЕ загруженные данные для текущей команды
-        all_draft_data = st.session_state.get('draft_data', {})
-        draft_data_list = all_draft_data.get(normalized_selected_team, [])
-
+        # Используем draft_data_list, полученные ранее
         if draft_data_list:
-            # Group drafts by match_key (team pair) and sort by match number within the group
+            # Group drafts by match_key (team pair) and sort by match number
             drafts_by_match = defaultdict(list)
             for draft in draft_data_list:
-                 # Добавим проверку на наличие match_key, на всякий случай
                  match_key = draft.get('match_key')
-                 if match_key:
-                    drafts_by_match[match_key].append(draft)
+                 if match_key: drafts_by_match[match_key].append(draft)
 
-            # Sort matches based on the minimum match_number in each group
-            # Это приближение к порядку недель/игр
-            sorted_match_keys = sorted(drafts_by_match.keys(),
-                                       key=lambda k: min(d.get('match_number', float('inf')) for d in drafts_by_match[k]))
+            sorted_match_keys = sorted(drafts_by_match.keys(), key=lambda k: min(d.get('match_number', float('inf')) for d in drafts_by_match[k]))
 
             # Display each match series
             for match_key in sorted_match_keys:
-                match_drafts = sorted(drafts_by_match[match_key], key=lambda d: d.get('match_number', 0)) # Сортируем игры внутри серии
+                match_drafts = sorted(drafts_by_match[match_key], key=lambda d: d.get('match_number', 0))
+                if not match_drafts: continue
 
-                if not match_drafts: continue # Пропускаем, если нет драфтов для этого ключа
-
-                # Определяем команды из первого драфта серии
                 first_draft = match_drafts[0]
-                # Используем absolute_blue_team/absolute_red_team для заголовка
                 abs_blue = first_draft.get('absolute_blue_team', 'Blue Team')
                 abs_red = first_draft.get('absolute_red_team', 'Red Team')
                 opponent_name = first_draft.get('opponent', 'Opponent')
 
-                st.subheader(f"{normalized_selected_team} vs {opponent_name}") # Заголовок серии
+                st.subheader(f"{normalized_selected_team} vs {opponent_name}")
 
-                # Initialize session state for toggling games visibility within this match series
-                base_game_key = f"show_game_{'_'.join(map(str, match_key))}" # Уникальный ключ для серии
+                # --- Кнопки для переключения игр ---
+                base_game_key = f"show_game_{'_'.join(map(str, match_key))}"
                 for draft in match_drafts:
                     match_num = draft.get('match_number', 0)
                     game_toggle_key = f"{base_game_key}_{match_num}"
-                    if game_toggle_key not in st.session_state:
-                        st.session_state[game_toggle_key] = False # По умолчанию скрыты
+                    if game_toggle_key not in st.session_state: st.session_state[game_toggle_key] = False
 
-                # Create buttons to toggle each game's visibility
                 num_games = len(match_drafts)
-                game_cols = st.columns(min(num_games, 5)) # Показывать максимум 5 кнопок в ряд
+                # Определяем количество колонок для кнопок, чтобы избежать переполнения
+                btn_cols_num = min(num_games, 5) # Максимум 5 кнопок в ряд
+                game_cols = st.columns(btn_cols_num)
                 for i, draft in enumerate(match_drafts):
-                    with game_cols[i % 5]:
+                    with game_cols[i % btn_cols_num]:
                         match_num = draft.get('match_number', i + 1)
                         game_toggle_key = f"{base_game_key}_{match_num}"
-                        # Показываем счет серии на кнопке
                         blue_score = draft.get('blue_wins_series', 0)
                         red_score = draft.get('red_wins_series', 0)
+                        # Формируем заголовок кнопки с актуальным счетом *на момент этой игры*
                         button_label = f"Game {match_num} ({abs_blue} {blue_score} - {red_score} {abs_red})"
-
                         if st.button(button_label, key=f"game_btn_{game_toggle_key}", use_container_width=True):
                             st.session_state[game_toggle_key] = not st.session_state[game_toggle_key]
 
-                # Display games that are toggled on for this series
-                active_games_in_series = [draft for draft in match_drafts
-                                          if st.session_state.get(f"{base_game_key}_{draft.get('match_number', 0)}")]
+                # --- Отображение активных драфтов ---
+                active_games_in_series = [draft for draft in match_drafts if st.session_state.get(f"{base_game_key}_{draft.get('match_number', 0)}")]
 
                 if active_games_in_series:
-                    active_cols = st.columns(len(active_games_in_series)) # Колонки для отображения драфтов
+                    # Определяем количество колонок для драфтов
+                    draft_cols_num = len(active_games_in_series)
+                    active_cols = st.columns(draft_cols_num)
+
                     for i, draft in enumerate(active_games_in_series):
                         with active_cols[i]:
                             match_num = draft.get('match_number', 'N/A')
@@ -1188,168 +1182,132 @@ def prime_league_page(selected_team):
                             winner_side = draft.get('winner_side')
 
                             is_winner = False
-                            if side and winner_side:
-                                is_winner = (side == winner_side)
+                            if side and winner_side: is_winner = (side == winner_side)
                             result = "Win" if is_winner else "Loss"
 
                             st.write(f"**Game {match_num}**")
-                            st.write(f"**Result: {result}** ({side.capitalize()} Side)")
+                            st.write(f"**Result: {result}** ({side.capitalize() if side else 'N/A'} Side)")
 
-                            # Определяем заголовки колонок (Выбранная команда | Оппонент)
                             left_team_header = normalized_selected_team
                             right_team_header = draft.get('opponent', 'Opponent')
 
-                            # Получаем данные из драфта (используем .get для безопасности)
                             team_bans = draft.get('team_bans', ['N/A']*5)
                             opponent_bans = draft.get('opponent_bans', ['N/A']*5)
-                            team_picks = draft.get('team_picks_ordered', ['N/A']*5)         # Используем ordered
-                            opponent_picks = draft.get('opponent_picks_ordered', ['N/A']*5) # Используем ordered
+                            team_picks = draft.get('team_picks_ordered', ['N/A']*5)
+                            opponent_picks = draft.get('opponent_picks_ordered', ['N/A']*5)
 
                             vod_link = draft.get('vod_link', "N/A")
                             vod_html = f'<a href="{vod_link}" target="_blank">VOD</a>' if vod_link != "N/A" else ""
 
-                            # --- Формируем данные для таблицы драфта (10 строк) ---
                             table_data = []
-                            # Баны Фаза 1 (3 строки)
+                            # Формируем 10 строк таблицы (3 бана, 3 пика, 2 бана, 2 пика)
+                            # Баны Фаза 1
                             for ban_idx in range(3):
                                 tb = team_bans[ban_idx] if ban_idx < len(team_bans) else "N/A"
                                 ob = opponent_bans[ban_idx] if ban_idx < len(opponent_bans) else "N/A"
-                                info = vod_html if ban_idx == 0 else result if ban_idx == 2 else "" # VOD в 1й, Result в 3й
-                                table_data.append((
-                                    f"{get_champion_icon(tb)} {tb}" if tb != "N/A" else "",
-                                    "Ban",
-                                    f"{get_champion_icon(ob)} {ob}" if ob != "N/A" else "",
-                                    info
-                                ))
-                            # Пики Фаза 1 (3 строки - P1, P2, P3)
+                                info = vod_html if ban_idx == 0 else result if ban_idx == 2 else ""
+                                table_data.append(( f"{get_champion_icon(tb)} {tb}" if tb != "N/A" else "", "Ban",
+                                                    f"{get_champion_icon(ob)} {ob}" if ob != "N/A" else "", info ))
+                            # Пики Фаза 1
                             for pick_idx in range(3):
                                 tp = team_picks[pick_idx] if pick_idx < len(team_picks) else "N/A"
                                 op = opponent_picks[pick_idx] if pick_idx < len(opponent_picks) else "N/A"
-                                table_data.append((
-                                    f"{get_champion_icon(tp)} {tp}" if tp != "N/A" else "",
-                                    "Pick",
-                                    f"{get_champion_icon(op)} {op}" if op != "N/A" else "",
-                                    ""
-                                ))
-                            # Баны Фаза 2 (2 строки - B4, B5)
+                                table_data.append(( f"{get_champion_icon(tp)} {tp}" if tp != "N/A" else "", "Pick",
+                                                    f"{get_champion_icon(op)} {op}" if op != "N/A" else "", "" ))
+                            # Баны Фаза 2
                             for ban_idx in range(3, 5):
                                 tb = team_bans[ban_idx] if ban_idx < len(team_bans) else "N/A"
                                 ob = opponent_bans[ban_idx] if ban_idx < len(opponent_bans) else "N/A"
-                                table_data.append((
-                                    f"{get_champion_icon(tb)} {tb}" if tb != "N/A" else "",
-                                    "Ban",
-                                    f"{get_champion_icon(ob)} {ob}" if ob != "N/A" else "",
-                                    ""
-                                ))
-                            # Пики Фаза 2 (2 строки - P4, P5)
+                                table_data.append(( f"{get_champion_icon(tb)} {tb}" if tb != "N/A" else "", "Ban",
+                                                    f"{get_champion_icon(ob)} {ob}" if ob != "N/A" else "", "" ))
+                            # Пики Фаза 2
                             for pick_idx in range(3, 5):
                                 tp = team_picks[pick_idx] if pick_idx < len(team_picks) else "N/A"
                                 op = opponent_picks[pick_idx] if pick_idx < len(opponent_picks) else "N/A"
-                                table_data.append((
-                                    f"{get_champion_icon(tp)} {tp}" if tp != "N/A" else "",
-                                    "Pick",
-                                    f"{get_champion_icon(op)} {op}" if op != "N/A" else "",
-                                    ""
-                                ))
+                                table_data.append(( f"{get_champion_icon(tp)} {tp}" if tp != "N/A" else "", "Pick",
+                                                    f"{get_champion_icon(op)} {op}" if op != "N/A" else "", "" ))
 
-                            # Создаем DataFrame
                             df_draft = pd.DataFrame(table_data, columns=[left_team_header, "Action", right_team_header, "Info"])
 
-                            # Функция стилизации (можно оставить или адаптировать цвета)
+                            # Функция стилизации (можно оставить или изменить цвета)
                             def highlight_draft_cells(row):
                                 styles = [''] * len(row)
                                 action = row['Action']
                                 info = row['Info']
                                 left_content = row[left_team_header]
                                 right_content = row[right_team_header]
-
                                 base_style = 'text-align: center; vertical-align: middle;'
-                                ban_color = '#4d0f0f' # Темно-красный
-                                pick_color = '#002b4d' # Темно-синий
-                                win_color = 'green'
-                                loss_color = 'red'
-                                text_color = 'white'
-
-                                # Стиль для Action
+                                ban_color = '#4d0f0f'; pick_color = '#002b4d'
+                                win_color = 'green'; loss_color = 'red'; text_color = 'white'
                                 styles[1] = f'{base_style} font-weight: bold;'
-
+                                styles[0] = base_style; styles[2] = base_style # Default cell style
                                 if action == "Ban":
+                                    styles[1] += f' color: {ban_color};'
                                     if left_content: styles[0] = f'{base_style} background-color: {ban_color}; color: {text_color};'
-                                    else: styles[0] = base_style
-                                    styles[1] += f' color: {ban_color};' # Цвет текста Ban
                                     if right_content: styles[2] = f'{base_style} background-color: {ban_color}; color: {text_color};'
-                                    else: styles[2] = base_style
                                 elif action == "Pick":
+                                    styles[1] += f' color: {pick_color};'
                                     if left_content: styles[0] = f'{base_style} background-color: {pick_color}; color: {text_color};'
-                                    else: styles[0] = base_style
-                                    styles[1] += f' color: {pick_color};' # Цвет текста Pick
                                     if right_content: styles[2] = f'{base_style} background-color: {pick_color}; color: {text_color};'
-                                    else: styles[2] = base_style
-                                else: # Пустые строки или другое
-                                     styles[0] = base_style
-                                     styles[2] = base_style
-
-                                # Стиль для Info (VOD/Result)
-                                styles[3] = base_style # Базовый стиль для ячейки Info
-                                if "VOD" in info: # Если есть ссылка VOD
-                                    pass # Оставляем стандартный стиль для ссылки
-                                elif info == "Win":
-                                    styles[3] += f' background-color: {win_color}; color: {text_color}; font-weight: bold;'
-                                elif info == "Loss":
-                                    styles[3] += f' background-color: {loss_color}; color: {text_color}; font-weight: bold;'
-
+                                styles[3] = base_style # Info cell style
+                                if "VOD" in info: pass
+                                elif info == "Win": styles[3] += f' background-color: {win_color}; color: {text_color}; font-weight: bold;'
+                                elif info == "Loss": styles[3] += f' background-color: {loss_color}; color: {text_color}; font-weight: bold;'
                                 return styles
 
-                            # Применяем стили и отображаем HTML
                             styled_df = df_draft.style.apply(highlight_draft_cells, axis=1)
                             html_draft = styled_df.to_html(escape=False, index=False, classes='styled-table drafts-table small-table')
                             st.markdown(html_draft, unsafe_allow_html=True)
-                else:
-                    # Если нет активных игр для отображения в этой серии
-                    # Можно добавить st.write("Select a game button above to view the draft.")
-                    pass # Или ничего не показывать
-
+                # else: # Если нет активных игр для отображения
+                #    st.write("Select a game button above to view the draft.")
         else:
             st.write(f"No draft data found for {normalized_selected_team}.")
 
 
-    # --- Блок Notes (оставляем как есть, но добавляем обработку ошибок при загрузке/сохранении) ---
+    # ================== Секция Notes ==================
     if st.session_state.show_notes:
         st.subheader("Notes")
         st.markdown("<hr style='border: 2px solid #333; margin: 10px 0;'>", unsafe_allow_html=True)
 
         notes_data_key = f'notes_data_{normalized_selected_team}'
+        # Загружаем данные при первом открытии секции или если их нет
         if notes_data_key not in st.session_state:
-            st.session_state[notes_data_key] = load_notes_data(normalized_selected_team, "data/notes") # Сохраняем в папку data
+            st.session_state[notes_data_key] = load_notes_data(normalized_selected_team, "data/notes")
+
+        # Получаем текущие данные из session_state
+        current_notes_data = st.session_state[notes_data_key]
 
         col_left, col_right = st.columns([3, 1])
 
         with col_left:
             st.subheader("Draft Templates")
-            table_cols = st.columns(3)
-            current_notes_data = st.session_state[notes_data_key]
-            # Убедимся, что tables существует и это список
-            if "tables" not in current_notes_data or not isinstance(current_notes_data["tables"], list) or len(current_notes_data["tables"]) != 6:
+            # Проверка структуры данных перед использованием
+            if not isinstance(current_notes_data, dict) or \
+               "tables" not in current_notes_data or \
+               not isinstance(current_notes_data["tables"], list) or \
+               len(current_notes_data["tables"]) != 6:
                  st.warning("Notes table data is corrupted. Resetting to default.")
-                 current_notes_data["tables"] = default_notes_data["tables"] # default_notes_data нужно определить
+                 current_notes_data = DEFAULT_NOTES_DATA.copy()
+                 st.session_state[notes_data_key] = current_notes_data # Обновляем в сессии
 
+            table_cols = st.columns(3)
             for i in range(6):
                 with table_cols[i % 3]:
                     st.write(f"Draft Template {i + 1}")
                     columns = ["Team 1", "Action", "Team 2"]
-                     # Проверка данных таблицы перед созданием DataFrame
+                    # Проверка конкретной таблицы
                     table_content = current_notes_data["tables"][i]
-                    if not isinstance(table_content, list) or not all(isinstance(row, list) and len(row) == 3 for row in table_content):
-                         st.warning(f"Invalid data for table {i+1}. Resetting.")
-                         table_content = default_notes_data["tables"][0] # Берем структуру из дефолта
-                         current_notes_data["tables"][i] = table_content
-
+                    if not isinstance(table_content, list) or len(table_content) != 10 or not all(isinstance(row, list) and len(row) == 3 for row in table_content):
+                         st.warning(f"Invalid data structure for table {i+1}. Resetting.")
+                         table_content = DEFAULT_NOTES_DATA["tables"][0] # Берем структуру из дефолта
+                         current_notes_data["tables"][i] = table_content # Исправляем в данных
 
                     try:
+                        # Устанавливаем фиксированное количество строк = 10
                         df = pd.DataFrame(table_content, columns=columns)
                         edited_df = st.data_editor(
                             df,
-                            num_rows="fixed", # Фикс. кол-во строк (10)
+                            num_rows="fixed", # Запрещаем добавление/удаление строк
                             use_container_width=True,
                             key=f"notes_table_{normalized_selected_team}_{i}",
                             height=385, # Примерная высота для 10 строк
@@ -1359,33 +1317,33 @@ def prime_league_page(selected_team):
                                 "Team 2": st.column_config.TextColumn("Team 2", width="medium"),
                             }
                         )
-                        # Обновляем данные в сессии
+                        # Обновляем данные в session state после редактирования
                         st.session_state[notes_data_key]["tables"][i] = edited_df.values.tolist()
                     except Exception as e:
                          st.error(f"Error displaying notes table {i+1}: {e}")
                          # Отображаем пустой редактор как запасной вариант
                          df_empty = pd.DataFrame([["", "Ban", ""]] * 10, columns=columns)
-                         st.data_editor(df_empty, key=f"notes_table_{normalized_selected_team}_{i}_fallback", disabled=True)
-
+                         st.data_editor(df_empty, key=f"notes_table_{normalized_selected_team}_{i}_fallback", disabled=True, height=385)
 
         with col_right:
             st.subheader("Additional Notes")
-            # Убедимся, что notes_text существует
+            # Проверка наличия и типа notes_text
             if "notes_text" not in current_notes_data or not isinstance(current_notes_data["notes_text"], str):
                  current_notes_data["notes_text"] = ""
 
             notes_text = st.text_area(
                 "Write your notes here:",
                 value=current_notes_data["notes_text"],
-                height=800, # Увеличим высоту
+                height=800, # Увеличена высота
                 key=f"notes_text_area_{normalized_selected_team}"
             )
+            # Обновляем текст заметок в session state
             st.session_state[notes_data_key]["notes_text"] = notes_text
 
-        # Кнопка сохранения может быть полезна, если автосохранение нежелательно
-        # if st.button("Save Notes"):
+        # --- Сохранение данных Notes ---
+        # Сохраняем каждый раз при изменении (можно добавить кнопку "Save" если автосохранение не нужно)
         save_notes_data(st.session_state[notes_data_key], normalized_selected_team, "data/notes")
-            # st.success("Notes saved!")
+
 def soloq_page():
     st.title("Unicorns of Love Sexy Edition 2025 SoloQ Statistics")
 
