@@ -673,48 +673,61 @@ def main():
             st.session_state.draft_data = fetch_draft_data()
 
     all_teams = set()
-# Check if data exists before accessing keys
-if st.session_state.match_history_data:
-    for team in st.session_state.match_history_data.keys():
-        # Добавим проверку, что ключ не пустой и нормализация возвращает не 'unknown'
-        normalized_team = normalize_team_name(team)
-        if team and normalized_team != "unknown":
-            all_teams.add(normalized_team)
-# Блок для first_bans_data УДАЛЕН
-if st.session_state.draft_data:
-    for team in st.session_state.draft_data.keys():
-        # Добавим проверку, что ключ не пустой и нормализация возвращает не 'unknown'
-        normalized_team = normalize_team_name(team)
-        if team and normalized_team != "unknown":
-            all_teams.add(normalized_team)
+    # Проверка наличия данных перед доступом к ключам
+    if st.session_state.match_history_data: # Уровень отступа 1
+        # Уровень отступа 2 (например, +4 пробела)
+        for team in st.session_state.match_history_data.keys():
+            # Уровень отступа 3 (например, +4 пробела)
+            normalized_team = normalize_team_name(team)
+            if team and normalized_team != "unknown":
+                all_teams.add(normalized_team)
 
-# Преобразуем в отсортированный список и проверяем, что он не пуст
-teams = sorted(list(all_teams))
-if not teams:
-    st.warning("No valid teams found in the loaded data. Please Update Data.")
-    # Можно либо остановить выполнение, либо показать сообщение
-    # return # Раскомментируйте, если хотите остановить выполнение здесь
-else:
-     # Продолжаем только если список команд не пуст
-     # Выбор команды в sidebar
-     # Добавим проверку, есть ли уже выбранная команда в session_state,
-     # и соответствует ли она текущему списку команд
-     current_selection = st.session_state.get("prime_team_select")
-     if current_selection not in teams:
-         st.session_state.prime_team_select = teams[0] # Выбираем первую команду по умолчанию
+    if st.session_state.draft_data: # Уровень отступа 1
+        # Уровень отступа 2
+        for team in st.session_state.draft_data.keys():
+            # Уровень отступа 3
+            normalized_team = normalize_team_name(team)
+            if team and normalized_team != "unknown":
+                all_teams.add(normalized_team)
 
-     selected_team = st.sidebar.selectbox(
-         "Select a Prime League Team",
-         teams,
-         key="prime_team_select" # Используем ключ для сохранения выбора
-      )
-    
+    # !!! Эта строка должна быть на том же уровне отступа, что и if/all_teams выше !!!
+    # Уровень отступа 1
     teams = sorted(list(all_teams))
-    if not teams:
-        st.warning("No teams found in the data.")
-        return
 
-    selected_team = st.sidebar.selectbox("Select a Prime League Team", teams, key="prime_team_select")
+    # Уровень отступа 1
+    if not teams:
+        # Уровень отступа 2
+        st.warning("No valid teams found in the loaded data. Please Update Data.")
+        # Можно добавить return, чтобы остановить выполнение, если команд нет
+        # return
+        selected_team = None # Устанавливаем в None, если команд нет
+    else:
+        # Уровень отступа 2
+        current_selection = st.session_state.get("prime_team_select")
+        # Если текущий выбор некорректен или отсутствует, выбираем первую команду
+        if not current_selection or current_selection not in teams:
+            current_selection = teams[0]
+            # Обновляем session_state, если нужно (хотя selectbox сделает это)
+            # st.session_state.prime_team_select = current_selection
+
+        selected_team = st.sidebar.selectbox(
+            "Select a Prime League Team",
+            teams,
+            index=teams.index(current_selection), # Устанавливаем начальное значение
+            key="prime_team_select" # Используем ключ для сохранения выбора
+         )
+
+    # --- Отображение страниц ---
+    # Уровень отступа 1
+    # Добавим проверку, что команда выбрана (на случай, если список был пуст)
+    if selected_team:
+        if st.session_state.current_page == "Prime League Stats":
+            prime_league_page(selected_team)
+        elif st.session_state.current_page == "UOL SoloQ":
+            soloq_page()
+    else:
+        # Если selected_team is None (т.к. список teams был пуст), показываем сообщение
+        st.error("Could not load team list. Please try updating data.")
 
     # Button to switch to UOL SoloQ
     if st.session_state.current_page == "Prime League Stats":
